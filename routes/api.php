@@ -42,3 +42,7 @@ Route::middleware(['agent.apikey', 'throttle:1000,1'])->group(function () {
     // ── Data Referensi (publik untuk agent, tetap dijaga dari luar) ───────────
     Route::get('/referensi/syarat/{jenis_surat}', [\App\Http\Controllers\ReferensiController::class, 'syarat']);
 });
+
+// ── Endpoint Development HANYA ────────────────────────────────────────────
+// TODO: Hapus atau nonaktifkan sebelum masuk ke tahap production
+Route::post('/dev/simulasi-chat', [\App\Http\Controllers\ChatController::class, 'simulasi']);

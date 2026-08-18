@@ -1,0 +1,207 @@
+{
+  "info": {
+    "_postman_id": "diskominfo-manual-testing-v1",
+    "name": "Diskominfo API Gateway — Testing Manual Alur Lengkap",
+    "description": "Simulasi alur penuh percakapan warga dari awal sampai konfirmasi permohonan.\n\nVariabel yang perlu diisi di Postman Environment:\n- base_url  : http://localhost:8000\n- api_key   : (isi dari .env AGENT_API_KEY)\n- no_wa     : 628111111111",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "api_key",  "value": "openclaw-dev-key-GANTI_DENGAN_NILAI_DI_ENV" },
+    { "key": "no_wa",    "value": "628111111111" }
+  ],
+  "item": [
+    {
+      "name": "1. Pesan Awal (halo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"halo\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Memulai percakapan. Sistem akan merespons meminta NIK warga."
+    },
+    {
+      "name": "2. Kirim NIK (Budi Santoso)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"1111111111111111\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Kirim 16-digit NIK warga Budi Santoso.\n\nNIK dummy: 1111111111111111\nNo WA terdaftar: 628111111111\n\nSistem akan cocokkan NIK dengan tabel warga, buat sesi, dan kirim OTP (di stub: catat ke log)."
+    },
+    {
+      "name": "3. Kirim OTP (CEK LOG DULU!)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"GANTI_DENGAN_OTP_DARI_LOG\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "⚠️ SEBELUM MENGIRIM: Buka storage/logs/laravel.log dan cari baris seperti:\n  [OTP Stub] OTP untuk ... adalah: XXXXXX\n\nGanti 'GANTI_DENGAN_OTP_DARI_LOG' dengan 6 digit OTP yang ditemukan.\n\nAlternatif via Tinker:\n  php artisan tinker\n  App\\Models\\SesiVerifikasi::latest()->first()->otp_plain"
+    },
+    {
+      "name": "4. Pilih Jenis Surat (domisili)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"domisili\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Pilih jenis surat 'domisili'. Sistem akan menampilkan syarat dokumen dan memulai pengisian form."
+    },
+    {
+      "name": "5a. Isi Form — nama_lengkap",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"Budi Santoso\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Isi field nama_lengkap. Untuk domisili, urutan field:\n1. nama_lengkap\n2. alamat_tinggal\n3. lama_tinggal\n4. keperluan"
+    },
+    {
+      "name": "5b. Isi Form — alamat_tinggal",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"Jl. Melati No. 1, Kota Contoh\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      }
+    },
+    {
+      "name": "5c. Isi Form — lama_tinggal",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"5 tahun\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      }
+    },
+    {
+      "name": "5d. Isi Form — keperluan",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"Keperluan BPJS\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Setelah semua field terisi, sistem akan meminta upload dokumen."
+    },
+    {
+      "name": "6a. Upload Dokumen — Fotokopi KTP",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "no_wa",  "value": "{{no_wa}}",  "type": "text" },
+            { "key": "pesan",  "value": ".",           "type": "text",
+              "description": "Titik sebagai placeholder teks karena file yang penting" },
+            { "key": "file",   "type": "file",
+              "description": "Pilih file gambar (JPG/PNG) sebagai simulasi foto KTP. Tidak perlu foto asli — gambar apapun bisa." }
+          ]
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Upload foto KTP (simulasi). Kirim sebagai multipart/form-data dengan field 'file'.\n\nFile yang diizinkan: jpg, jpeg, png, pdf (max 5MB).\nTidak perlu foto KTP asli — gunakan gambar placeholder apapun."
+    },
+    {
+      "name": "6b. Upload Dokumen — Fotokopi KK",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "no_wa",  "value": "{{no_wa}}",  "type": "text" },
+            { "key": "pesan",  "value": ".",           "type": "text" },
+            { "key": "file",   "type": "file",
+              "description": "Pilih file gambar sebagai simulasi foto KK." }
+          ]
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Upload foto KK (simulasi). Setelah 2 dokumen terpenuhi, sistem otomatis pindah ke langkah konfirmasi."
+    },
+    {
+      "name": "7. Konfirmasi — Kirim YA",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Agent-Api-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type",    "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"no_wa\": \"{{no_wa}}\",\n  \"pesan\": \"ya\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{base_url}}/api/dev/simulasi-chat", "host": ["{{base_url}}"], "path": ["api", "dev", "simulasi-chat"] }
+      },
+      "description": "Konfirmasi pengajuan dengan mengetik 'ya'. Sistem akan membuat record Permohonan dan warga mendapat notifikasi (tersimpan di tabel notifikasi_terkirim).\n\nSetelah ini, buka Dashboard Admin untuk proses approve → terbitkan surat."
+    }
+  ]
+}

@@ -3,9 +3,17 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Services\ReferensiService;
 
 class ReferensiController extends Controller
 {
+    protected ReferensiService $referensiService;
+
+    public function __construct(ReferensiService $referensiService)
+    {
+        $this->referensiService = $referensiService;
+    }
+
     /**
      * GET /api/referensi/syarat/{jenis_surat}
      *
@@ -18,58 +26,12 @@ class ReferensiController extends Controller
      */
     public function syarat(string $jenis_surat)
     {
-        $katalog = [
-            'domisili' => [
-                'jenis_surat'     => 'domisili',
-                'nama'            => 'Surat Keterangan Domisili',
-                'estimasi_waktu'  => '1-2 hari kerja',
-                'syarat' => [
-                    'Fotokopi KTP',
-                    'Fotokopi Kartu Keluarga (KK)',
-                    'Surat pengantar RT/RW',
-                    'Materai Rp10.000',
-                ],
-            ],
-            'sktm' => [
-                'jenis_surat'     => 'sktm',
-                'nama'            => 'Surat Keterangan Tidak Mampu',
-                'estimasi_waktu'  => '1-3 hari kerja',
-                'syarat' => [
-                    'Fotokopi KTP',
-                    'Fotokopi Kartu Keluarga (KK)',
-                    'Surat pengantar RT/RW',
-                    'Surat permohonan bermaterai',
-                    'Dokumen pendukung (tagihan, kondisi rumah, dll)',
-                ],
-            ],
-            'pengantar' => [
-                'jenis_surat'     => 'pengantar',
-                'nama'            => 'Surat Pengantar',
-                'estimasi_waktu'  => '1 hari kerja',
-                'syarat' => [
-                    'Fotokopi KTP',
-                    'Surat pengantar RT/RW',
-                    'Keterangan keperluan surat',
-                ],
-            ],
-            'lainnya' => [
-                'jenis_surat'     => 'lainnya',
-                'nama'            => 'Surat Keterangan Lainnya',
-                'estimasi_waktu'  => '2-5 hari kerja',
-                'syarat' => [
-                    'Fotokopi KTP',
-                    'Fotokopi Kartu Keluarga (KK)',
-                    'Surat pengantar RT/RW',
-                    'Dokumen pendukung sesuai keperluan',
-                    'Surat permohonan bermaterai',
-                ],
-            ],
-        ];
+        $data = $this->referensiService->syarat($jenis_surat);
 
-        if (!array_key_exists($jenis_surat, $katalog)) {
+        if (!$data) {
             return response()->json(['status' => 'jenis_surat_tidak_dikenal'], 404);
         }
 
-        return response()->json($katalog[$jenis_surat]);
+        return response()->json($data);
     }
 }

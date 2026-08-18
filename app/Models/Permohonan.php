@@ -22,9 +22,16 @@ class Permohonan extends Model
         'status',
         'catatan_petugas',
         'file_surat_url',
+        'diproses_oleh',
+        'nomor_surat',
     ];
 
     protected $casts = [
         'data_form' => 'array',
     ];
+
+    public function petugas()
+    {
+        return $this->belongsTo(Petugas::class, 'diproses_oleh');
+    }
 }
