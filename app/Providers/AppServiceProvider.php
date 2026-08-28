@@ -18,7 +18,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->bind(
             \App\Contracts\WhatsAppNotifier::class,
-            \App\Services\StubWhatsAppNotifier::class
+            \App\Services\FonnteService::class
         );
     }
 
@@ -27,6 +27,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Paksa HTTPS jika aplikasi diakses melalui Reverse Proxy (yang mengirimkan X-Forwarded-Proto = https),
+        // atau jika diakses menggunakan layanan tunnel ngrok, ATAU jika di production.
+        $request = request();
+        $isHttpsProxy = $request->header('x-forwarded-proto') === 'https';
+        $isNgrok = str_contains($request->getHost(), 'ngrok-free.dev') || str_contains($request->getHost(), 'ngrok.app') || str_contains($request->getHost(), 'ngrok.io');
+        $isProduction = app()->environment('production');
+
+        if ($isHttpsProxy || $isNgrok || $isProduction) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
     }
 }

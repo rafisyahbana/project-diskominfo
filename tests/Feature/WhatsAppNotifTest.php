@@ -10,6 +10,9 @@ use App\Models\Petugas;
 use App\Models\Permohonan;
 use App\Models\NotifikasiTerkirim;
 
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
+
 class WhatsAppNotifTest extends TestCase
 {
     use RefreshDatabase;
@@ -18,6 +21,11 @@ class WhatsAppNotifTest extends TestCase
     {
         parent::setUp();
         Storage::fake('local');
+        
+        Config::set('services.fonnte.token', 'dummy-token');
+        Http::fake([
+            'https://api.fonnte.com/send' => Http::response(['status' => true], 200),
+        ]);
     }
 
     private function makePetugas(): Petugas

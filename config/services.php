@@ -35,4 +35,20 @@ return [
         ],
     ],
 
+    'fonnte' => [
+        'token' => env('FONNTE_API_TOKEN'),
+        'secret' => env('FONNTE_WEBHOOK_SECRET'),
+        'device' => env('FONNTE_DEVICE'),
+    ],
+
+    'tesseract' => [
+        // Path lengkap ke binary tesseract. Di Windows: 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        // Di Linux/production: cukup 'tesseract' jika sudah di PATH
+        'path'     => env('TESSERACT_PATH', 'tesseract'),
+        // Bahasa yang dipakai — 'ind+eng' untuk KTP Indonesia
+        'lang'     => env('TESSERACT_LANG', 'ind+eng'),
+        // Direktori tessdata (opsional, null = pakai default bawaan binary)
+        'tessdata' => env('TESSERACT_TESSDATA', null),
+    ],
+
 ];

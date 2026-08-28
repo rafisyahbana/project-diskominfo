@@ -45,4 +45,7 @@ Route::middleware(['agent.apikey', 'throttle:1000,1'])->group(function () {
 
 // ── Endpoint Development HANYA ────────────────────────────────────────────
 // TODO: Hapus atau nonaktifkan sebelum masuk ke tahap production
+// Fonnte Webhook
+Route::post('/webhook/fonnte', [\App\Http\Controllers\Webhook\FonnteController::class, 'handle']);
+
 Route::post('/dev/simulasi-chat', [\App\Http\Controllers\ChatController::class, 'simulasi']);

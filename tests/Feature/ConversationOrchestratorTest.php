@@ -13,7 +13,7 @@ class ConversationOrchestratorTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_warga_baru_diarahkan_ke_menunggu_nik()
+    public function test_warga_baru_mendapat_menu_utama()
     {
         $response = $this->postJson('/api/dev/simulasi-chat', [
             'no_wa' => '08111222333',
@@ -22,10 +22,54 @@ class ConversationOrchestratorTest extends TestCase
 
         $response->assertStatus(200);
 
-        // State harusnya pindah ke menunggu_nik
+        // State harusnya tetap di awal
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('awal', $state->langkah);
+        $this->assertNull($state->sesi_id);
+    }
+
+    public function test_warga_pilih_menu_1_diarahkan_ke_menunggu_nik()
+    {
+        PercakapanState::create([
+            'no_wa' => '08111222333',
+            'langkah' => 'awal',
+        ]);
+
+        $response = $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '1',
+        ]);
+
+        $response->assertStatus(200);
+
         $state = PercakapanState::where('no_wa', '08111222333')->first();
         $this->assertEquals('menunggu_nik', $state->langkah);
-        $this->assertNull($state->sesi_id);
+    }
+
+    public function test_warga_pilih_menu_lain_mendapat_info_statis()
+    {
+        PercakapanState::create([
+            'no_wa' => '08111222333',
+            'langkah' => 'awal',
+        ]);
+
+        // Kirim '2' (Cek Status)
+        $response1 = $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '2',
+        ]);
+        $response1->assertStatus(200);
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('awal', $state->langkah); // State tidak berubah
+
+        // Kirim '3' (Bantuan)
+        $response2 = $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '3',
+        ]);
+        $response2->assertStatus(200);
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('awal', $state->langkah); // State tidak berubah
     }
 
     public function test_kirim_nik_valid_diarahkan_ke_menunggu_otp()
@@ -120,7 +164,7 @@ class ConversationOrchestratorTest extends TestCase
 
         $response = $this->postJson('/api/dev/simulasi-chat', [
             'no_wa' => '08111222333',
-            'pesan' => 'saya mau surat domisili ya',
+            'pesan' => '1',
         ]);
 
         $response->assertStatus(200);
@@ -139,7 +183,7 @@ class ConversationOrchestratorTest extends TestCase
 
         $response = $this->postJson('/api/dev/simulasi-chat', [
             'no_wa' => '08111222333',
-            'pesan' => 'saya mau surat',
+            'pesan' => '15',
         ]);
 
         $response->assertStatus(200);

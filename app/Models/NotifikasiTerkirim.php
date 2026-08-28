@@ -12,6 +12,8 @@ class NotifikasiTerkirim extends Model
     protected $fillable = [
         'no_wa',
         'pesan',
+        'status_terkirim',
+        'error_pesan',
         'id_permohonan',
         'created_at',
     ];

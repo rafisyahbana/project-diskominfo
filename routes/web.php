@@ -25,4 +25,12 @@ Route::get('/surat/{permohonan}/unduh', [DashboardController::class, 'unduhSurat
     ->middleware('signed')
     ->name('surat.unduh');
 
+Route::get('/upload/dokumen/{no_wa}/{sesi_id}/{jenis_dokumen}', [\App\Http\Controllers\UploadController::class, 'showForm'])
+    ->middleware('signed')
+    ->name('upload.form');
+
+Route::post('/upload/dokumen/{no_wa}/{sesi_id}/{jenis_dokumen}', [\App\Http\Controllers\UploadController::class, 'process'])
+    ->middleware('signed')
+    ->name('upload.process');
+
 require __DIR__.'/auth.php';

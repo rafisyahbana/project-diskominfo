@@ -75,8 +75,19 @@ class ConversationOrchestrator
 
     private function handleAwal(PercakapanState $state, string $pesanMasuk): string
     {
-        $state->update(['langkah' => 'menunggu_nik']);
-        return $this->llmResponder->susunRespons('minta_nik', $pesanMasuk);
+        $pesanLower = trim(strtolower($pesanMasuk));
+
+        if ($pesanLower === '1') {
+            $state->update(['langkah' => 'menunggu_nik']);
+            return $this->llmResponder->susunRespons('minta_nik', $pesanMasuk);
+        } elseif ($pesanLower === '2') {
+            return $this->llmResponder->susunRespons('menu_cek_status', $pesanMasuk);
+        } elseif ($pesanLower === '3') {
+            return $this->llmResponder->susunRespons('menu_bantuan', $pesanMasuk);
+        }
+
+        // Jika input tidak valid (misal: "Halo", "5"), kembali tampilkan menu utama tanpa mengubah state
+        return $this->llmResponder->susunRespons('menu_awal', $pesanMasuk);
     }
 
     private function handleMenungguNik(PercakapanState $state, string $pesanMasuk): string
@@ -129,7 +140,8 @@ class ConversationOrchestrator
                     $dokumenBerikutnya = $this->getDokumenMenunggu($dokumenWajib, $dokumenDiterima);
                     if ($dokumenBerikutnya !== null) {
                         $state->update(['langkah' => 'menunggu_dokumen']);
-                        return "Verifikasi berhasil. Mari lanjutkan pengajuan sebelumnya.\n\nSilakan kirimkan foto *{$this->labelDokumen($dokumenBerikutnya)}*:";
+                        return "Verifikasi berhasil. Mari lanjutkan pengajuan sebelumnya.\n\n"
+                             . $this->handleMenungguDokumen($state, '', null);
                     }
 
                     // 3. Jika form & dokumen lengkap -> menunggu_konfirmasi
@@ -175,18 +187,28 @@ class ConversationOrchestrator
 
     private function handleMenungguPilihanSurat(PercakapanState $state, string $pesanMasuk): string
     {
-        $pesanLower  = strtolower($pesanMasuk);
+        $pesanLower  = trim(strtolower($pesanMasuk));
         $jenisDipilih = null;
 
-        // Pencocokan deterministik — str_contains, BUKAN LLM
-        if (str_contains($pesanLower, 'domisili')) {
-            $jenisDipilih = 'domisili';
-        } elseif (str_contains($pesanLower, 'sktm') || str_contains($pesanLower, 'tidak mampu')) {
-            $jenisDipilih = 'sktm';
-        } elseif (str_contains($pesanLower, 'pengantar')) {
-            $jenisDipilih = 'pengantar';
-        } elseif (str_contains($pesanLower, 'lainnya') || str_contains($pesanLower, 'lain')) {
-            $jenisDipilih = 'lainnya';
+        $pilihanMap = [
+            '1'  => 'domisili',
+            '2'  => 'usaha',
+            '3'  => 'sktm',
+            '4'  => 'skck',
+            '5'  => 'belum_menikah',
+            '6'  => 'kelahiran',
+            '7'  => 'kematian',
+            '8'  => 'pindah',
+            '9'  => 'penghasilan',
+            '10' => 'tanah',
+            '11' => 'ahli_waris',
+            '12' => 'beda_nama',
+            '13' => 'nikah',
+            '14' => 'lainnya',
+        ];
+
+        if (array_key_exists($pesanLower, $pilihanMap)) {
+            $jenisDipilih = $pilihanMap[$pesanLower];
         }
 
         if ($jenisDipilih) {
@@ -251,8 +273,8 @@ class ConversationOrchestrator
 
             return $this->llmResponder->susunRespons('form_lengkap_lanjut_dokumen', $pesanMasuk)
                  . "\n\nDokumen yang perlu dikirim:\n{$daftarDokumen}\n\n"
-                 . "Estimasi waktu: *{$katalog['estimasi_waktu']}*.\n"
-                 . "Silakan kirimkan foto/scan dokumen pertama (*{$this->labelDokumen($dokumenWajib[0])}*):";
+                 . "Estimasi waktu: *{$katalog['estimasi_waktu']}*.\n\n"
+                 . $this->handleMenungguDokumen($state, '', null);
         }
 
         // Fallback (seharusnya tidak tercapai jika state konsisten)
@@ -267,74 +289,38 @@ class ConversationOrchestrator
         $katalog       = $this->referensiService->syarat($state->jenis_surat_dipilih);
         $dokumenWajib  = $katalog['dokumen_wajib'];
         $dokumenDiterima = $state->dokumen_diterima ?? [];
+        
+        $dokumenBerikutnya = $this->getDokumenMenunggu($dokumenWajib, $dokumenDiterima);
 
-        // (a) Tidak ada file → minta kirim foto
-        if ($file === null) {
-            $dokumenBerikutnya = $this->getDokumenMenunggu($dokumenWajib, $dokumenDiterima);
-            if ($dokumenBerikutnya) {
-                return "Tolong kirimkan foto *{$this->labelDokumen($dokumenBerikutnya)}* "
-                     . "(bukan pesan teks).";
-            }
+        if ($dokumenBerikutnya === null) {
+            // Seharusnya tidak masuk sini jika state valid, tapi jaga-jaga
+            return "Semua dokumen sudah diterima sebelumnya.";
         }
 
-        // (b) File ada → simpan ke storage dan catat ke DB
-        if ($file !== null) {
-            // Simpan ke storage dengan path terstruktur: dokumen/{no_wa}/{timestamp}_{originalname}
-            $folder   = 'dokumen/' . $state->no_wa;
-            $pathFile = Storage::disk('local')->putFile($folder, $file);
+        $linkUpload = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'upload.form',
+            now()->addMinutes(60),
+            ['no_wa' => $state->no_wa, 'sesi_id' => $state->sesi_id, 'jenis_dokumen' => $dokumenBerikutnya]
+        );
 
-            // Tentukan slot dokumen berikutnya secara deterministik
-            $jenisDokumen = $this->getDokumenMenunggu($dokumenWajib, $dokumenDiterima);
+        $privacyKtp = ($dokumenBerikutnya === 'fotokopi_ktp')
+            ? "\n\nUntuk perlindungan data pribadi, foto KTP hanya digunakan untuk proses pembacaan data permohonan dan tidak disimpan sebagai dokumen permanen pada sistem layanan."
+            : "";
 
-            if ($jenisDokumen === null) {
-                // Semua dokumen sudah diterima (state tidak konsisten) — abaikan upload ini
-                return "Semua dokumen sudah diterima sebelumnya.";
-            }
-
-            // Simpan record ke tabel dokumen_permohonans (id_permohonan null dulu)
-            $dokumenRecord = DokumenPermohonan::create([
-                'no_wa'          => $state->no_wa,
-                'jenis_dokumen'  => $jenisDokumen,
-                'path_file'      => $pathFile,
-                'id_permohonan'  => null,
-                'status'         => 'aktif',
-            ]);
-
-            // Update dokumen_diterima di state: key = jenis_dokumen, value = id record
-            $dokumenDiterima[$jenisDokumen] = $dokumenRecord->id;
-            $state->update(['dokumen_diterima' => $dokumenDiterima]);
-
-            // (c) Cek apakah masih ada dokumen yang kurang
-            $dokumenBerikutnya = $this->getDokumenMenunggu($dokumenWajib, $dokumenDiterima);
-
-            if ($dokumenBerikutnya !== null) {
-                return "✓ *{$this->labelDokumen($jenisDokumen)}* diterima.\n\n"
-                     . "Selanjutnya, kirimkan foto *{$this->labelDokumen($dokumenBerikutnya)}*:";
-            }
-
-            // Semua dokumen lengkap → buat ringkasan dan pindah ke menunggu_konfirmasi
-            $ringkasanForm = implode("\n", array_map(
-                fn($k, $v) => "• {$this->labelField($k)}: {$v}",
-                array_keys($state->form_sementara ?? []),
-                array_values($state->form_sementara ?? [])
-            ));
-
-            $ringkasanDokumen = implode("\n", array_map(
-                fn($d) => "• {$this->labelDokumen($d)} ✓",
-                array_keys($dokumenDiterima)
-            ));
-
-            $state->update(['langkah' => 'menunggu_konfirmasi']);
-
-            return "✓ *{$this->labelDokumen($jenisDokumen)}* diterima. Semua dokumen lengkap!\n\n"
-                 . "*Ringkasan Pengajuan*\n"
-                 . "Jenis Surat: *{$katalog['nama']}*\n\n"
-                 . "*Data Form:*\n{$ringkasanForm}\n\n"
-                 . "*Dokumen:*\n{$ringkasanDokumen}\n\n"
-                 . "Ketik *YA* untuk konfirmasi dan kirim permohonan, atau *BATAL* untuk membatalkan.";
+        // Jika ini adalah balasan baru masuk saat di state ini, anggap mengingatkan
+        if ($pesanMasuk !== '') {
+             return "Kami sedang menunggu Anda mengunggah dokumen *{$this->labelDokumen($dokumenBerikutnya)}*.\n"
+                  . "Mohon klik tautan berikut dan selesaikan unggahan di browser Anda:\n"
+                  . "{$linkUpload}\n\n"
+                  . "(Tautan ini berlaku selama 60 menit)."
+                  . $privacyKtp;
         }
 
-        return "Silakan kirimkan foto dokumen yang diperlukan.";
+        // Kalau pesanMasuk kosong, berarti baru saja pindah state
+        return "Silakan buka tautan berikut untuk mengunggah foto *{$this->labelDokumen($dokumenBerikutnya)}*:\n"
+             . "{$linkUpload}\n\n"
+             . "(Tautan ini berlaku selama 60 menit)."
+             . $privacyKtp;
     }
 
     private function handleMenungguKonfirmasi(PercakapanState $state, string $pesanMasuk): string

@@ -13,6 +13,11 @@ class DokumenPermohonan extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'ocr_diproses_at' => 'datetime',
+    ];
+
+
     // Aktifkan auto created_at manual karena kita tidak pakai timestamps() default
     protected static function boot(): void
     {
