@@ -20,6 +20,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'agent.apikey' => \App\Http\Middleware\VerifyAgentApiKey::class,
+            'prevent.back' => \App\Http\Middleware\PreventBackHistory::class,
+        ]);
+
+        $middleware->appendToGroup('web', [
+            \App\Http\Middleware\PreventBackHistory::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

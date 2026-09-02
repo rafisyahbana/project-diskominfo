@@ -1,218 +1,221 @@
 <x-app-layout>
-    <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                Detail Permohonan #{{ substr($permohonan->id, 0, 8) }}
-            </h2>
-            <a href="{{ route('dashboard.permohonan.index') }}" class="text-sm text-gray-600 hover:text-gray-900">&larr; Kembali ke Daftar</a>
+    <x-slot name="header">Detail Permohonan #{{ substr($permohonan->id, 0, 8) }}</x-slot>
+
+    {{-- Flash messages --}}
+    @if (session('success'))
+        <div class="alert alert-success">
+            ✓ {{ session('success') }}
         </div>
-    </x-slot>
+    @endif
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+    @if ($errors->has('status'))
+        <div class="alert alert-error">
+            ✗ {{ $errors->first('status') }}
+        </div>
+    @endif
 
-            {{-- Flash messages --}}
-            @if (session('success'))
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded" role="alert">
-                    {{ session('success') }}
+    {{-- Back link --}}
+    <div style="margin-bottom: 1.5rem;">
+        <a href="{{ route('dashboard.permohonan.index') }}" class="link-primary" style="font-size: 0.875rem;">
+            ← Kembali ke Daftar
+        </a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+        {{-- Ringkasan Permohonan --}}
+        <div class="dkm-card">
+            <div class="dkm-card-header">
+                <h3>Ringkasan Permohonan</h3>
+                <span class="badge
+                    {{ $permohonan->status === 'menunggu_verifikasi' ? 'badge-blue' : '' }}
+                    {{ $permohonan->status === 'diproses' ? 'badge-yellow' : '' }}
+                    {{ $permohonan->status === 'selesai' ? 'badge-green' : '' }}
+                    {{ $permohonan->status === 'ditolak' ? 'badge-red' : '' }}">
+                    {{ str_replace('_', ' ', $permohonan->status) }}
+                </span>
+            </div>
+            <div class="dkm-card-body">
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <label>NIK</label>
+                        <p>{{ $permohonan->nik }}</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Nomor WhatsApp</label>
+                        <p>{{ $permohonan->no_wa }}</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Jenis Surat</label>
+                        <p style="text-transform: capitalize;">{{ str_replace('_', ' ', $permohonan->jenis_surat) }}</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Tanggal Pengajuan</label>
+                        <p>{{ $permohonan->created_at->format('d M Y H:i:s') }}</p>
+                    </div>
+                    @if ($permohonan->petugas)
+                        <div class="detail-item">
+                            <label>Diproses Oleh</label>
+                            <p>{{ $permohonan->petugas->nama }}</p>
+                        </div>
+                    @endif
+                    @if ($permohonan->catatan_petugas)
+                        <div class="detail-item" style="grid-column: 1 / -1;">
+                            <label>Catatan Petugas</label>
+                            <p style="background: #fefce8; padding: 0.75rem 1rem; border-radius: 8px; border-left: 3px solid #eab308;">{{ $permohonan->catatan_petugas }}</p>
+                        </div>
+                    @endif
                 </div>
-            @endif
+            </div>
+        </div>
 
-            @if ($errors->has('status'))
-                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded" role="alert">
-                    {{ $errors->first('status') }}
+        {{-- Isi Formulir --}}
+        <div class="dkm-card">
+            <div class="dkm-card-header">
+                <h3>Isi Formulir</h3>
+            </div>
+            <div class="dkm-card-body">
+                <div class="detail-grid">
+                    @foreach($permohonan->data_form as $key => $value)
+                        <div class="detail-item">
+                            <label>{{ $labelFields[$key] ?? ucwords(str_replace('_', ' ', $key)) }}</label>
+                            <p style="background: var(--neutral-bg); padding: 0.5rem 0.75rem; border-radius: 6px;">{{ $value }}</p>
+                        </div>
+                    @endforeach
                 </div>
-            @endif
+            </div>
+        </div>
 
-            {{-- Status & Pemroses --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6">
-                    <h3 class="text-lg font-medium border-b pb-2 mb-4">Ringkasan Permohonan</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <p class="text-sm text-gray-500">NIK</p>
-                            <p class="font-medium">{{ $permohonan->nik }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Nomor WhatsApp</p>
-                            <p class="font-medium">{{ $permohonan->no_wa }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Jenis Surat</p>
-                            <p class="font-medium capitalize">{{ str_replace('_', ' ', $permohonan->jenis_surat) }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Status</p>
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                {{ $permohonan->status === 'menunggu_verifikasi' ? 'bg-blue-100 text-blue-800' : '' }}
-                                {{ $permohonan->status === 'diproses' ? 'bg-yellow-100 text-yellow-800' : '' }}
-                                {{ $permohonan->status === 'selesai' ? 'bg-green-100 text-green-800' : '' }}
-                                {{ $permohonan->status === 'ditolak' ? 'bg-red-100 text-red-800' : '' }}">
-                                {{ str_replace('_', ' ', $permohonan->status) }}
-                            </span>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Tanggal Pengajuan</p>
-                            <p class="font-medium">{{ $permohonan->created_at->format('d M Y H:i:s') }}</p>
-                        </div>
-                        @if ($permohonan->petugas)
-                            <div>
-                                <p class="text-sm text-gray-500">Diproses Oleh</p>
-                                <p class="font-medium">{{ $permohonan->petugas->nama }}</p>
+        {{-- Dokumen Pendukung --}}
+        <div class="dkm-card">
+            <div class="dkm-card-header">
+                <h3>Dokumen Pendukung</h3>
+            </div>
+            <div class="dkm-card-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem;">
+                    @forelse($dokumen as $doc)
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                            <div style="padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6;">
+                                <span style="font-weight: 600; font-size: 0.875rem; text-transform: capitalize;">{{ str_replace('_', ' ', $doc->jenis_dokumen) }}</span>
                             </div>
-                        @endif
-                        @if ($permohonan->catatan_petugas)
-                            <div class="col-span-2">
-                                <p class="text-sm text-gray-500">Catatan Petugas</p>
-                                <p class="font-medium bg-yellow-50 p-3 rounded border-l-4 border-yellow-400">{{ $permohonan->catatan_petugas }}</p>
+                            <div style="background: var(--neutral-bg); height: 280px; display: flex; align-items: center; justify-content: center;">
+                                <img src="{{ route('dashboard.dokumen.preview', $doc->id) }}" alt="{{ $doc->jenis_dokumen }}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                             </div>
-                        @endif
+                            <div style="padding: 0.75rem 1rem; text-align: center;">
+                                <a href="{{ route('dashboard.dokumen.preview', $doc->id) }}" target="_blank" class="link-primary" style="font-size: 0.8125rem;">
+                                    Lihat Penuh / Unduh
+                                </a>
+                            </div>
+                        </div>
+                    @empty
+                        <p style="color: #9ca3af;">Tidak ada dokumen pendukung yang dilampirkan.</p>
+                    @endforelse
+                </div>
+            </div>
+        </div>
+
+        {{-- Tindakan: hanya tampil jika masih menunggu_verifikasi --}}
+        @if ($permohonan->status === 'menunggu_verifikasi')
+            <div class="dkm-card">
+                <div class="dkm-card-header">
+                    <h3>Tindakan</h3>
+                </div>
+                <div class="dkm-card-body">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem;">
+
+                        {{-- Panel Approve --}}
+                        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 1.5rem;">
+                            <h4 style="font-weight: 600; color: #065f46; margin: 0 0 0.5rem;">Setujui Permohonan</h4>
+                            <p style="font-size: 0.8125rem; color: #047857; margin: 0 0 1.25rem; line-height: 1.5;">Dokumen dan data form sudah sesuai. Lanjutkan ke proses pembuatan surat resmi.</p>
+                            <form method="POST" action="{{ route('dashboard.permohonan.approve', $permohonan->id) }}" onsubmit="return confirm('Setujui permohonan ini?')">
+                                @csrf
+                                <button type="submit" id="btn-approve" class="btn btn-success" style="width: 100%; justify-content: center;">
+                                    ✓ Setujui Permohonan
+                                </button>
+                            </form>
+                        </div>
+
+                        {{-- Panel Reject --}}
+                        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 1.5rem;">
+                            <h4 style="font-weight: 600; color: #991b1b; margin: 0 0 0.5rem;">Tolak Permohonan</h4>
+                            <p style="font-size: 0.8125rem; color: #b91c1c; margin: 0 0 1.25rem; line-height: 1.5;">Berkas tidak valid atau tidak lengkap. Berikan alasan penolakan kepada pemohon.</p>
+                            <form method="POST" action="{{ route('dashboard.permohonan.reject', $permohonan->id) }}">
+                                @csrf
+                                <div style="margin-bottom: 0.75rem;">
+                                    <label class="form-label" for="catatan_petugas" style="color: #991b1b;">
+                                        Alasan Penolakan <span style="color: #dc2626;">*</span>
+                                    </label>
+                                    <textarea id="catatan_petugas" name="catatan_petugas" rows="3"
+                                        class="form-textarea"
+                                        style="border-color: #fca5a5;"
+                                        placeholder="Wajib diisi. Minimal 10 karakter.">{{ old('catatan_petugas') }}</textarea>
+                                    @error('catatan_petugas')
+                                        <p style="margin-top: 0.3rem; font-size: 0.8rem; color: #dc2626;">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                                <button type="submit" id="btn-reject" class="btn btn-danger" style="width: 100%; justify-content: center;">
+                                    ✗ Tolak Permohonan
+                                </button>
+                            </form>
+                        </div>
+
                     </div>
                 </div>
             </div>
+        @endif
 
-            {{-- Isi Form --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 text-gray-900">
-                    <h3 class="text-lg font-medium border-b pb-2 mb-4">Isi Formulir</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        @foreach($permohonan->data_form as $key => $value)
-                            <div>
-                                <p class="text-sm text-gray-500">{{ $labelFields[$key] ?? ucwords(str_replace('_', ' ', $key)) }}</p>
-                                <p class="font-medium bg-gray-50 p-2 rounded">{{ $value }}</p>
-                            </div>
-                        @endforeach
-                    </div>
+        {{-- Tombol Terbitkan: hanya untuk status diproses --}}
+        @if ($permohonan->status === 'diproses')
+            <div class="dkm-card">
+                <div class="dkm-card-header">
+                    <h3>Terbitkan Surat</h3>
+                </div>
+                <div class="dkm-card-body">
+                    <p style="font-size: 0.875rem; color: #6b7280; margin: 0 0 1.25rem;">Permohonan ini telah diverifikasi. Klik tombol di bawah untuk membuat dan menerbitkan surat resmi dalam format PDF.</p>
+                    <form method="POST" action="{{ route('dashboard.permohonan.terbitkan', $permohonan->id) }}"
+                          onsubmit="return confirm('Terbitkan surat untuk permohonan ini? Tindakan ini tidak dapat dibatalkan.')">
+                        @csrf
+                        <button type="submit" id="btn-terbitkan" class="btn btn-primary" style="padding: 0.75rem 2rem;">
+                            📄 Terbitkan Surat Resmi
+                        </button>
+                    </form>
                 </div>
             </div>
+        @endif
 
-            {{-- Dokumen --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 text-gray-900">
-                    <h3 class="text-lg font-medium border-b pb-2 mb-4">Dokumen Pendukung</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        @forelse($dokumen as $doc)
-                            <div class="border rounded p-4">
-                                <p class="font-medium text-center mb-2 capitalize">{{ str_replace('_', ' ', $doc->jenis_dokumen) }}</p>
-                                <div class="bg-gray-100 flex items-center justify-center rounded overflow-hidden border border-gray-200" style="height: 300px;">
-                                    <img src="{{ route('dashboard.dokumen.preview', $doc->id) }}" alt="{{ $doc->jenis_dokumen }}" class="w-full h-full object-contain">
-                                </div>
-                                <div class="mt-3 text-center">
-                                    <a href="{{ route('dashboard.dokumen.preview', $doc->id) }}" target="_blank" class="text-indigo-600 hover:text-indigo-900 text-sm">Lihat Penuh / Unduh</a>
-                                </div>
-                            </div>
-                        @empty
-                            <p class="text-gray-500">Tidak ada dokumen pendukung yang dilampirkan.</p>
-                        @endforelse
-                    </div>
+        {{-- Info Surat Selesai --}}
+        @if ($permohonan->status === 'selesai')
+            <div class="dkm-card" style="border-color: #a7f3d0; background: #f0fdf4;">
+                <div class="dkm-card-header" style="border-bottom-color: #bbf7d0;">
+                    <h3 style="color: #065f46;">✅ Surat Telah Diterbitkan</h3>
                 </div>
-            </div>
-
-            {{-- Aksi: hanya tampil jika masih menunggu_verifikasi --}}
-            @if ($permohonan->status === 'menunggu_verifikasi')
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <h3 class="text-lg font-medium border-b pb-2 mb-4">Tindakan</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            
-                            {{-- Panel Approve --}}
-                            <div class="bg-green-50 border border-green-200 rounded-lg p-5">
-                                <div class="mb-4">
-                                    <h4 class="text-green-800 font-semibold mb-2">Setujui Permohonan</h4>
-                                    <p class="text-sm text-green-700">Dokumen dan data form sudah sesuai. Lanjutkan ke proses pembuatan surat resmi.</p>
-                                </div>
-                                <div class="mt-4">
-                                    <form method="POST" action="{{ route('dashboard.permohonan.approve', $permohonan->id) }}" onsubmit="return confirm('Setujui permohonan ini?')">
-                                        @csrf
-                                        <button type="submit" id="btn-approve" class="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded hover:bg-green-700 transition shadow-sm">
-                                            ✓ Setujui Permohonan
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-
-                            {{-- Panel Reject --}}
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-5">
-                                <div class="mb-4">
-                                    <h4 class="text-red-800 font-semibold mb-2">Tolak Permohonan</h4>
-                                    <p class="text-sm text-red-700">Berkas tidak valid atau tidak lengkap. Berikan alasan penolakan kepada pemohon.</p>
-                                </div>
-                                <div class="mt-4">
-                                    <form method="POST" action="{{ route('dashboard.permohonan.reject', $permohonan->id) }}">
-                                        @csrf
-                                        <div class="mb-3">
-                                            <label for="catatan_petugas" class="block text-sm font-medium text-red-800 mb-1">
-                                                Alasan Penolakan <span class="text-red-600">*</span>
-                                            </label>
-                                            <textarea id="catatan_petugas" name="catatan_petugas" rows="3"
-                                                class="w-full border-red-300 rounded shadow-sm focus:ring-red-500 focus:border-red-500 @error('catatan_petugas') border-red-500 ring-1 ring-red-500 @enderror"
-                                                placeholder="Wajib diisi. Minimal 10 karakter.">{{ old('catatan_petugas') }}</textarea>
-                                            @error('catatan_petugas')
-                                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                            @enderror
-                                        </div>
-                                        <button type="submit" id="btn-reject"
-                                            class="w-full px-4 py-2 bg-red-600 text-white font-semibold rounded hover:bg-red-700 transition">
-                                            ✗ Tolak Permohonan
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-
+                <div class="dkm-card-body">
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <div class="detail-item">
+                            <label>Nomor Surat</label>
+                            <p>{{ $permohonan->nomor_surat }}</p>
                         </div>
-                    </div>
-                </div>
-            @endif
-
-            {{-- Tombol Terbitkan: hanya untuk status diproses --}}
-            @if ($permohonan->status === 'diproses')
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <h3 class="text-lg font-medium border-b pb-2 mb-4">Terbitkan Surat</h3>
-                        <p class="text-sm text-gray-600 mb-4">Permohonan ini telah diverifikasi. Klik tombol di bawah untuk membuat dan menerbitkan surat resmi dalam format PDF.</p>
-                        <form method="POST" action="{{ route('dashboard.permohonan.terbitkan', $permohonan->id) }}"
-                              onsubmit="return confirm('Terbitkan surat untuk permohonan ini? Tindakan ini tidak dapat dibatalkan.')">
-                            @csrf
-                            <button type="submit" id="btn-terbitkan"
-                                class="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
-                                📄 Terbitkan Surat Resmi
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            @endif
-
-            {{-- Info Surat Selesai --}}
-            @if ($permohonan->status === 'selesai')
-                <div class="bg-green-50 border border-green-200 overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <h3 class="text-lg font-medium text-green-800 border-b border-green-200 pb-2 mb-4">✅ Surat Telah Diterbitkan</h3>
-                        <div class="space-y-2 text-sm">
-                            <p><span class="font-semibold">Nomor Surat:</span> {{ $permohonan->nomor_surat }}</p>
-                            @php
-                                $signedUrl = URL::temporarySignedRoute(
-                                    'surat.unduh',
-                                    now()->addDays(30),
-                                    ['permohonan' => $permohonan->id]
-                                );
-                            @endphp
-                            <p>
-                                <span class="font-semibold">Link Unduh Warga</span>
-                                <span class="text-xs text-gray-500">(berlaku 30 hari):</span>
-                            </p>
-                            <div class="flex items-center gap-2">
+                        @php
+                            $signedUrl = URL::temporarySignedRoute(
+                                'surat.unduh',
+                                now()->addDays(30),
+                                ['permohonan' => $permohonan->id]
+                            );
+                        @endphp
+                        <div class="detail-item">
+                            <label>Link Unduh Warga <span style="text-transform: none; font-weight: 400; color: #9ca3af;">(berlaku 30 hari)</span></label>
+                            <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem; align-items: center; flex-wrap: wrap;">
                                 <input type="text" readonly value="{{ $signedUrl }}"
-                                    class="flex-1 border border-gray-300 rounded px-2 py-1 text-xs bg-gray-50 font-mono">
-                                <a href="{{ $signedUrl }}" target="_blank"
-                                    class="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 transition whitespace-nowrap">
+                                    class="form-input" style="flex: 1; font-size: 0.75rem; font-family: monospace; min-width: 200px; background: #f9fafb;">
+                                <a href="{{ $signedUrl }}" target="_blank" class="btn btn-primary" style="white-space: nowrap; font-size: 0.8125rem; padding: 0.55rem 1rem;">
                                     Pratinjau / Unduh PDF
                                 </a>
                             </div>
                         </div>
                     </div>
                 </div>
-            @endif
+            </div>
+        @endif
 
-        </div>
     </div>
 </x-app-layout>

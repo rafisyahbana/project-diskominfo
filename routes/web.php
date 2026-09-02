@@ -7,10 +7,8 @@ Route::get('/', function () {
     return redirect('/dashboard/login');
 });
 
-Route::middleware('auth:petugas')->prefix('dashboard')->name('dashboard.')->group(function () {
-    Route::get('/', function () {
-        return redirect()->route('dashboard.permohonan.index');
-    });
+Route::middleware(['auth:petugas', 'prevent.back'])->prefix('dashboard')->name('dashboard.')->group(function () {
+    Route::get('/', [DashboardController::class, 'dashboard'])->name('index');
 
     Route::get('/permohonan', [DashboardController::class, 'index'])->name('permohonan.index');
     Route::get('/permohonan/{id}', [DashboardController::class, 'show'])->name('permohonan.show');

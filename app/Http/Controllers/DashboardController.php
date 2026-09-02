@@ -15,6 +15,170 @@ use Illuminate\Support\Facades\URL;
 
 class DashboardController extends Controller
 {
+    /**
+     * 14 Jenis Surat Resmi Diskominfo
+     */
+    public const DAFTAR_JENIS_SURAT = [
+        'domisili'       => 'Surat Keterangan Domisili',
+        'usaha'          => 'Surat Keterangan Usaha',
+        'sktm'           => 'Surat Keterangan Tidak Mampu',
+        'skck'           => 'Surat Pengantar SKCK',
+        'belum_menikah'  => 'Surat Keterangan Belum Pernah Menikah',
+        'kelahiran'      => 'Surat Keterangan Kelahiran',
+        'kematian'       => 'Surat Keterangan Kematian',
+        'pindah'         => 'Surat Pengantar Pindah',
+        'penghasilan'    => 'Surat Keterangan Penghasilan',
+        'tanah'          => 'Surat Keterangan Tanah',
+        'ahli_waris'     => 'Surat Keterangan Ahli Waris',
+        'beda_nama'      => 'Surat Keterangan Beda Nama',
+        'nikah'          => 'Surat Pengantar Nikah Model N1-N4',
+        'lainnya'        => 'Lainnya',
+    ];
+
+    public function dashboard(Request $request)
+    {
+        $periode = $request->query('periode', 'bulan');
+        if (!in_array($periode, ['hari', 'minggu', 'bulan', 'tahun'])) {
+            $periode = 'bulan';
+        }
+
+        // Base query periode
+        $now = now();
+        $queryPeriode = Permohonan::query();
+
+        switch ($periode) {
+            case 'hari':
+                $queryPeriode->whereDate('created_at', $now->toDateString());
+                $periodeLabel = 'Hari Ini (' . $now->translatedFormat('d F Y') . ')';
+                break;
+            case 'minggu':
+                $startOfWeek = $now->copy()->startOfWeek();
+                $endOfWeek   = $now->copy()->endOfWeek();
+                $queryPeriode->whereBetween('created_at', [$startOfWeek, $endOfWeek]);
+                $periodeLabel = 'Minggu Ini (' . $startOfWeek->translatedFormat('d M') . ' - ' . $endOfWeek->translatedFormat('d M Y') . ')';
+                break;
+            case 'tahun':
+                $queryPeriode->whereYear('created_at', $now->year);
+                $periodeLabel = 'Tahun ' . $now->year;
+                break;
+            case 'bulan':
+            default:
+                $queryPeriode->whereYear('created_at', $now->year)
+                             ->whereMonth('created_at', $now->month);
+                $periodeLabel = 'Bulan ' . $now->translatedFormat('F Y');
+                break;
+        }
+
+        // Summary Cards
+        $totalSemua = Permohonan::count();
+        $totalPeriode = (clone $queryPeriode)->count();
+        $menungguVerifikasi = Permohonan::where('status', 'menunggu_verifikasi')->count();
+        $diproses = Permohonan::where('status', 'diproses')->count();
+        $selesai = Permohonan::where('status', 'selesai')->count();
+        $ditolak = Permohonan::where('status', 'ditolak')->count();
+
+        // Rekap Jenis Surat dalam periode terpilih
+        $permohonanByJenis = (clone $queryPeriode)
+            ->selectRaw('jenis_surat, count(*) as total')
+            ->groupBy('jenis_surat')
+            ->pluck('total', 'jenis_surat')
+            ->toArray();
+
+        // Susun 14 jenis surat lengkap dengan hitungannya
+        $statJenisSurat = [];
+        foreach (self::DAFTAR_JENIS_SURAT as $key => $nama) {
+            $count = $permohonanByJenis[$key] ?? 0;
+            // Jika ada surat lama bernama 'pengantar', satukan ke 'lainnya' atau tetap hitung
+            if ($key === 'lainnya' && isset($permohonanByJenis['pengantar'])) {
+                $count += $permohonanByJenis['pengantar'];
+            }
+            $statJenisSurat[] = [
+                'key'        => $key,
+                'nama'       => $nama,
+                'total'      => $count,
+                'persentase' => $totalPeriode > 0 ? round(($count / $totalPeriode) * 100, 1) : 0,
+            ];
+        }
+
+        // Urutkan dari yang terbanyak
+        usort($statJenisSurat, fn($a, $b) => $b['total'] <=> $a['total']);
+
+        // Temukan jenis surat terpopuler (Top Requested)
+        $topJenisSurat = $statJenisSurat[0]['total'] > 0 ? $statJenisSurat[0] : null;
+
+        // Data Grafik Tren berdasarkan Periode
+        $chartLabels = [];
+        $chartValues = [];
+
+        if ($periode === 'hari') {
+            // Breakdown per jam (00:00 - 23:00)
+            for ($h = 0; $h <= 23; $h++) {
+                $hourLabel = sprintf('%02d:00', $h);
+                $chartLabels[] = $hourLabel;
+                $countHour = (clone $queryPeriode)
+                    ->whereTime('created_at', '>=', sprintf('%02d:00:00', $h))
+                    ->whereTime('created_at', '<=', sprintf('%02d:59:59', $h))
+                    ->count();
+                $chartValues[] = $countHour;
+            }
+        } elseif ($periode === 'minggu') {
+            // 7 hari Senin s/d Minggu
+            $startOfWeek = $now->copy()->startOfWeek();
+            for ($d = 0; $d < 7; $d++) {
+                $dayDate = $startOfWeek->copy()->addDays($d);
+                $chartLabels[] = $dayDate->translatedFormat('l, d M');
+                $countDay = Permohonan::whereDate('created_at', $dayDate->toDateString())->count();
+                $chartValues[] = $countDay;
+            }
+        } elseif ($periode === 'tahun') {
+            // 12 Bulan (Jan - Des)
+            for ($m = 1; $m <= 12; $m++) {
+                $monthDate = \Carbon\Carbon::createFromDate($now->year, $m, 1);
+                $chartLabels[] = $monthDate->translatedFormat('F');
+                $countMonth = Permohonan::whereYear('created_at', $now->year)
+                    ->whereMonth('created_at', $m)
+                    ->count();
+                $chartValues[] = $countMonth;
+            }
+        } else {
+            // Bulan ini: per tanggal (1 sampai jumlah hari di bulan ini)
+            $daysInMonth = $now->daysInMonth;
+            for ($day = 1; $day <= $daysInMonth; $day++) {
+                $dayDate = \Carbon\Carbon::createFromDate($now->year, $now->month, $day);
+                $chartLabels[] = $dayDate->format('d M');
+                $countDay = Permohonan::whereDate('created_at', $dayDate->toDateString())->count();
+                $chartValues[] = $countDay;
+            }
+        }
+
+        // Data Grafik Distribusi (Doughnut/Bar) untuk Top Jenis Surat
+        $distribusiLabels = [];
+        $distribusiValues = [];
+        foreach ($statJenisSurat as $item) {
+            if ($item['total'] > 0 || count($distribusiLabels) < 5) {
+                $distribusiLabels[] = $item['nama'];
+                $distribusiValues[] = $item['total'];
+            }
+        }
+
+        return view('dashboard.index', compact(
+            'periode',
+            'periodeLabel',
+            'totalSemua',
+            'totalPeriode',
+            'menungguVerifikasi',
+            'diproses',
+            'selesai',
+            'ditolak',
+            'statJenisSurat',
+            'topJenisSurat',
+            'chartLabels',
+            'chartValues',
+            'distribusiLabels',
+            'distribusiValues'
+        ));
+    }
+
     public function index(Request $request)
     {
         $status = $request->query('status', 'menunggu_verifikasi');
