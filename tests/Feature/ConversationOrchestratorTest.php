@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 use App\Models\Warga;
 use App\Models\PercakapanState;
@@ -74,6 +75,10 @@ class ConversationOrchestratorTest extends TestCase
 
     public function test_kirim_nik_valid_diarahkan_ke_menunggu_otp()
     {
+        Http::fake([
+            'api.fonnte.com/*' => Http::response(['status' => true], 200),
+        ]);
+
         // Setup warga terdaftar
         Warga::factory()->create([
             'nik' => '1234567890123456',

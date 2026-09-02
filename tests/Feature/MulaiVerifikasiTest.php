@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 use App\Models\Warga;
 use App\Models\LogAksesAgent;
@@ -54,6 +55,11 @@ class MulaiVerifikasiTest extends TestCase
 
     public function test_berhasil_generate_otp()
     {
+        // Fake HTTP agar tidak benar-benar menghubungi Fonnte saat testing
+        Http::fake([
+            'api.fonnte.com/*' => Http::response(['status' => true], 200),
+        ]);
+
         $warga = Warga::factory()->create([
             'nik' => '1234567890123456',
             'no_hp_terdaftar' => '081234567890'

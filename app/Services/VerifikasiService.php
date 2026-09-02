@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Contracts\WhatsAppNotifier;
 use App\Models\Warga;
 use App\Models\SesiVerifikasi;
 use App\Models\LogAksesAgent;
@@ -10,6 +11,8 @@ use Illuminate\Support\Facades\Log;
 
 class VerifikasiService
 {
+    public function __construct(protected WhatsAppNotifier $notifier) {}
+
     /**
      * Memulai proses verifikasi NIK.
      * Mengembalikan array: ['status' => string, 'code' => int, 'data' => array|null]
@@ -45,8 +48,11 @@ class VerifikasiService
             'expired_at' => now()->addMinutes(5),
         ]);
 
-        // TODO: Integrasi WhatsApp API untuk mengirim OTP ke user
-        Log::info("OTP untuk $no_wa adalah: $otp");
+        // Kirim OTP via WhatsApp (Fonnte)
+        $pesan = "Kode OTP verifikasi Anda adalah: *{$otp}*\n\nKode berlaku selama 5 menit. Jangan bagikan kode ini kepada siapapun.";
+        $terkirim = $this->notifier->kirim($no_wa, $pesan);
+
+        Log::info("OTP untuk $no_wa adalah: $otp", ['terkirim' => $terkirim]);
 
         $this->logAkses($no_wa, $nik, 'success');
 
