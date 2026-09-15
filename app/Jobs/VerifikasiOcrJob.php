@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\DokumenPermohonan;
+use App\Models\PercakapanState;
 use App\Models\SesiVerifikasi;
 use App\Services\OcrService;
 use App\Contracts\WhatsAppNotifier;
@@ -13,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 class VerifikasiOcrJob implements ShouldQueue
 {
@@ -59,57 +61,94 @@ class VerifikasiOcrJob implements ShouldQueue
         // Jalankan OCR
         $teks = $ocr->ekstrak($pathAbsolut);
 
-        if ($teks === null) {
-            // Tesseract error atau output kosong → flag tidak_terbaca untuk audit petugas
-            $dokumen->update([
-                'status_ocr'      => 'tidak_terbaca',
-                'nik_terbaca'     => null,
-                'ocr_diproses_at' => now(),
-            ]);
-
-            Log::info('[VerifikasiOcrJob] OCR tidak dapat membaca dokumen, ditandai untuk verifikasi manual', [
-                'dokumen_id' => $this->dokumenId,
-                'no_wa'      => $this->noWa,
-            ]);
-
-            // Tidak kirim notifikasi khusus — warga sudah dapat pesan "sukses upload" dari UploadController
-            return;
-        }
-
-        // Ekstrak NIK dari teks OCR
-        $nikTerbaca = $ocr->ekstrakNik($teks);
+        // Ekstrak NIK dari teks OCR (null jika teks kosong)
+        $nikTerbaca = $teks ? $ocr->ekstrakNik($teks) : null;
 
         // Ambil NIK referensi dari SesiVerifikasi
         $sesi    = SesiVerifikasi::find($this->sesiId);
         $nikAsli = $sesi?->nik;
 
-        // Bandingkan (normalisasi: hapus spasi, hanya angka)
+        // Normalisasi: hapus semua karakter non-digit
         $nikBersih = $nikTerbaca ? preg_replace('/\D/', '', $nikTerbaca) : null;
         $nikCocok  = $nikAsli && $nikBersih && $nikBersih === $nikAsli;
 
-        $statusOcr = $nikCocok ? 'ok' : 'gagal';
+        if ($nikCocok) {
+            // ✅ NIK cocok — dokumen diterima
+            $dokumen->update([
+                'status_ocr'      => 'ok',
+                'nik_terbaca'     => $nikBersih,
+                'ocr_diproses_at' => now(),
+            ]);
+
+            Log::info('[VerifikasiOcrJob] OCR KTP berhasil — NIK cocok', [
+                'dokumen_id' => $this->dokumenId,
+                'no_wa'      => $this->noWa,
+            ]);
+
+            $notifier->kirim(
+                $this->noWa,
+                "✅ Foto KTP Anda berhasil diverifikasi."
+            );
+
+            return;
+        }
+
+        // ❌ NIK tidak terbaca atau tidak cocok — tolak dan minta upload ulang
+        $statusOcr = ($teks === null) ? 'tidak_terbaca' : 'gagal';
 
         $dokumen->update([
             'status_ocr'      => $statusOcr,
             'nik_terbaca'     => $nikBersih,
             'ocr_diproses_at' => now(),
+            'status'          => 'ditolak',
         ]);
 
-        Log::info('[VerifikasiOcrJob] OCR selesai', [
+        Log::info('[VerifikasiOcrJob] OCR KTP gagal — minta upload ulang', [
             'dokumen_id'  => $this->dokumenId,
             'no_wa'       => $this->noWa,
             'status_ocr'  => $statusOcr,
             'nik_terbaca' => $nikBersih,
             'nik_asli'    => $nikAsli,
-            // Detail ketidakcocokan HANYA di log internal, TIDAK pernah ke warga
         ]);
 
-        // Kirim notifikasi WA yang SAMA untuk semua kasus (ok maupun gagal):
-        // Warga tidak perlu tahu detail verifikasi internal — itu urusan petugas.
-        // Pesan ini hanya dikrim jika jobnya adalah KTP (non-KTP tidak kirim notif).
+        // Hapus file yang ditolak dari storage
+        Storage::disk('local')->delete($dokumen->path_file);
+
+        // Reset slot fotokopi_ktp di state warga agar bisa upload ulang
+        $state = PercakapanState::where('no_wa', $this->noWa)->first();
+        if ($state) {
+            $dokumenDiterima = $state->dokumen_diterima ?? [];
+            unset($dokumenDiterima['fotokopi_ktp']);
+            
+            // Jika state sudah masuk konfirmasi tapi KTP ditolak, kembalikan ke menunggu dokumen
+            $langkah = $state->langkah;
+            if ($langkah === 'menunggu_konfirmasi') {
+                $langkah = 'menunggu_dokumen';
+            }
+            
+            $state->update([
+                'dokumen_diterima' => $dokumenDiterima,
+                'langkah'          => $langkah
+            ]);
+        }
+
+        // Generate link upload ulang (berlaku 60 menit)
+        $linkUploadUlang = URL::temporarySignedRoute(
+            'upload.form',
+            now()->addMinutes(60),
+            ['no_wa' => $this->noWa, 'sesi_id' => $this->sesiId, 'jenis_dokumen' => 'fotokopi_ktp']
+        );
+
+        $alasan = ($statusOcr === 'tidak_terbaca')
+            ? 'Foto tidak terbaca dengan jelas (mungkin buram, gelap, atau bukan foto KTP).'
+            : 'NIK pada foto KTP tidak sesuai dengan data yang terdaftar.';
+
         $notifier->kirim(
             $this->noWa,
-            "ℹ Dokumen KTP Anda sudah diterima dan sedang diproses oleh petugas."
+            "⚠️ *Foto KTP ditolak*\n\n{$alasan}\n\n"
+            . "Silakan upload ulang foto KTP yang jelas dan sesuai:\n"
+            . "{$linkUploadUlang}\n"
+            . "(Tautan berlaku selama 60 menit)"
         );
     }
 

@@ -8,6 +8,7 @@ use Tests\TestCase;
 use App\Models\PercakapanState;
 use App\Models\SesiVerifikasi;
 use App\Models\DokumenPermohonan;
+use App\Services\OcrService;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -116,12 +117,19 @@ class WebUploadTest extends TestCase
     // ─────────────────────────────────────────────────────────────────────────
     public function test_sukses_upload_memicu_whatsapp_lanjutan()
     {
+        $nik = '1234567890123456';
+
+        // Mock OcrService: anggap foto KTP valid (NIK cocok)
+        $ocrMock = Mockery::mock(OcrService::class);
+        $ocrMock->shouldReceive('ekstrak')->once()->andReturn("NIK {$nik}");
+        $ocrMock->shouldReceive('ekstrakNik')->once()->andReturn($nik);
+        $this->app->instance(OcrService::class, $ocrMock);
+
+        // Notifier dipanggil 2×:
+        //   (1) UploadController: link upload dokumen berikutnya
+        //   (2) VerifikasiOcrJob: konfirmasi KTP berhasil diverifikasi
         $notifierMock = Mockery::mock(WhatsAppNotifier::class);
-        $notifierMock->shouldReceive('kirim')
-            ->once()
-            ->with('628111', Mockery::on(function ($pesan) {
-                return str_contains($pesan, 'berhasil diterima') && str_contains($pesan, 'Selanjutnya');
-            }));
+        $notifierMock->shouldReceive('kirim')->twice();
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
         [$sesi] = $this->buatSesiDanState(
@@ -145,6 +153,7 @@ class WebUploadTest extends TestCase
             'jenis_dokumen' => 'fotokopi_ktp',
         ]);
 
+        // Slot fotokopi_ktp harus masih ada (OCR berhasil, tidak dihapus)
         $state = PercakapanState::where('no_wa', '628111')->first();
         $this->assertArrayHasKey('fotokopi_ktp', $state->dokumen_diterima);
     }
@@ -158,9 +167,20 @@ class WebUploadTest extends TestCase
     // ─────────────────────────────────────────────────────────────────────────
     public function test_upload_dua_dokumen_berurutan_pindahkan_state_ke_menunggu_konfirmasi()
     {
-        // Notifier dipanggil 2×: setelah KTP (link KK), setelah KK (ringkasan)
+        $nik = '1234567890123456';
+
+        // Mock OcrService: anggap foto KTP valid (NIK cocok)
+        $ocrMock = Mockery::mock(OcrService::class);
+        $ocrMock->shouldReceive('ekstrak')->once()->andReturn("NIK {$nik}");
+        $ocrMock->shouldReceive('ekstrakNik')->once()->andReturn($nik);
+        $this->app->instance(OcrService::class, $ocrMock);
+
+        // Notifier dipanggil 3×:
+        //   (1) UploadController setelah KTP: link upload KK
+        //   (2) VerifikasiOcrJob setelah KTP: konfirmasi KTP ok
+        //   (3) UploadController setelah KK: ringkasan konfirmasi
         $notifierMock = Mockery::mock(WhatsAppNotifier::class);
-        $notifierMock->shouldReceive('kirim')->twice();
+        $notifierMock->shouldReceive('kirim')->times(3);
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
         [$sesi] = $this->buatSesiDanState(

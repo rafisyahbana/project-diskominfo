@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\VerifikasiOcrJob;
 use App\Models\DokumenPermohonan;
+use App\Models\PercakapanState;
 use App\Models\SesiVerifikasi;
 use App\Services\OcrService;
 use App\Contracts\WhatsAppNotifier;
@@ -15,11 +16,12 @@ use Mockery;
 /**
  * Test FEATURE untuk VerifikasiOcrJob.
  *
- * OcrService di-mock agar test tidak bergantung pada Tesseract binary
- * dan berjalan cepat. Test ini membuktikan LOGIKA BISNIS job:
- * - Update kolom status_ocr di DB sesuai hasil perbandingan NIK
- * - Kirim notifikasi WA yang NETRAL (tidak memblokir warga, tidak membocorkan detail teknis)
- * - Status ok/gagal/tidak_terbaca tersimpan dengan benar untuk audit petugas
+ * OcrService di-mock agar test tidak bergantung pada Tesseract binary.
+ * Perilaku baru:
+ * - NIK cocok      → status 'ok', notif sukses ke warga
+ * - NIK tidak cocok→ status 'gagal', dokumen ditolak, link upload ulang dikirim
+ * - OCR null       → status 'tidak_terbaca', link upload ulang dikirim
+ * - non-KTP        → status 'ok' langsung, tanpa OCR
  */
 class VerifikasiOcrJobTest extends TestCase
 {
@@ -30,6 +32,11 @@ class VerifikasiOcrJobTest extends TestCase
         string $noWa = '628111',
         string $jenisDokumen = 'fotokopi_ktp'
     ): array {
+        Storage::fake('local');
+
+        // Buat file dummy agar Storage::delete() tidak error
+        Storage::disk('local')->put('dokumen/' . $noWa . '/ktp.png', 'dummy');
+
         $sesi = SesiVerifikasi::create([
             'no_wa'           => $noWa,
             'nik'             => $nikSesi,
@@ -40,7 +47,6 @@ class VerifikasiOcrJobTest extends TestCase
             'berlaku_hingga'  => now()->addMinutes(90),
         ]);
 
-        Storage::fake('local');
         $dokumen = DokumenPermohonan::create([
             'no_wa'         => $noWa,
             'jenis_dokumen' => $jenisDokumen,
@@ -49,31 +55,34 @@ class VerifikasiOcrJobTest extends TestCase
             'status'        => 'aktif',
         ]);
 
+        // Buat PercakapanState dengan fotokopi_ktp terdaftar
+        PercakapanState::create([
+            'no_wa'            => $noWa,
+            'langkah'          => 'menunggu_dokumen',
+            'dokumen_diterima' => ['fotokopi_ktp' => $dokumen->id],
+        ]);
+
         return [$sesi, $dokumen];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test 1: NIK cocok → status_ocr = 'ok', pesan WA netral dikirim
+    // Test 1: NIK cocok → status_ocr = 'ok', notifikasi sukses dikirim
     // ─────────────────────────────────────────────────────────────────────────
-    public function test_nik_cocok_set_status_ok_dan_kirim_notifikasi_netral()
+    public function test_nik_cocok_set_status_ok_dan_kirim_notifikasi_sukses()
     {
         $nik = '3517231234560001';
         [$sesi, $dokumen] = $this->buatDokumenDanSesi($nik);
 
-        // Mock OcrService: ekstrak() mengembalikan teks dengan NIK yang benar
         $ocrMock = Mockery::mock(OcrService::class);
         $ocrMock->shouldReceive('ekstrak')->once()->andReturn("NIK {$nik}");
         $ocrMock->shouldReceive('ekstrakNik')->once()->andReturn($nik);
         $this->app->instance(OcrService::class, $ocrMock);
 
-        // Mock notifier: harus dipanggil 1×, pesannya netral
         $notifierMock = Mockery::mock(WhatsAppNotifier::class);
         $notifierMock->shouldReceive('kirim')
             ->once()
             ->with('628111', Mockery::on(function ($pesan) {
-                // Pesan HARUS netral — tidak menyebut "cocok", "verifikasi berhasil",
-                // maupun hint apapun yang bisa membingungkan jika NIK sebenarnya tidak cocok
-                return str_contains($pesan, 'sedang diproses');
+                return str_contains($pesan, 'berhasil diverifikasi');
             }));
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
@@ -86,16 +95,12 @@ class VerifikasiOcrJobTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test 2: NIK TIDAK cocok → status_ocr = 'gagal', pesan WA TETAP netral
-    //
-    // Ini adalah test kunci: membuktikan warga tidak pernah mendapat pesan
-    // "dokumen tidak cocok" atau instruksi apapun untuk upload ulang.
-    // Hanya flag di DB untuk petugas admin.
+    // Test 2: NIK TIDAK cocok → status 'gagal', ditolak, link upload ulang dikirim
     // ─────────────────────────────────────────────────────────────────────────
-    public function test_nik_tidak_cocok_set_status_gagal_pesan_wa_tetap_netral()
+    public function test_nik_tidak_cocok_tolak_dokumen_dan_kirim_link_upload_ulang()
     {
-        $nikAsli   = '3517231234560001';
-        $nikSalah  = '9999991234560001'; // NIK berbeda dari KTP palsu
+        $nikAsli  = '3517231234560001';
+        $nikSalah = '9999991234560001';
         [$sesi, $dokumen] = $this->buatDokumenDanSesi($nikAsli);
 
         $ocrMock = Mockery::mock(OcrService::class);
@@ -107,43 +112,43 @@ class VerifikasiOcrJobTest extends TestCase
         $notifierMock->shouldReceive('kirim')
             ->once()
             ->with('628111', Mockery::on(function ($pesan) {
-                // Pesan harus netral — tidak menyebut "tidak cocok", "upload ulang", "salah"
-                $bolehAda     = str_contains($pesan, 'sedang diproses');
-                $tidakBolehAda = str_contains($pesan, 'tidak cocok')
-                             || str_contains($pesan, 'upload ulang')
-                             || str_contains($pesan, 'coba lagi')
-                             || str_contains($pesan, 'salah')
-                             || str_contains($pesan, 'ditolak');
-                return $bolehAda && !$tidakBolehAda;
+                return str_contains($pesan, 'ditolak')
+                    && str_contains($pesan, 'upload ulang');
             }));
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
         VerifikasiOcrJob::dispatchSync($dokumen->id, $sesi->id, '628111');
 
         $dokumen->refresh();
-        $this->assertEquals('gagal', $dokumen->status_ocr,
-            'status_ocr harus "gagal" saat NIK tidak cocok — untuk flag petugas admin');
-        $this->assertEquals($nikSalah, $dokumen->nik_terbaca,
-            'nik_terbaca harus berisi NIK dari OCR (bukan NIK asli) — untuk audit');
+        $this->assertEquals('gagal', $dokumen->status_ocr);
+        $this->assertEquals($nikSalah, $dokumen->nik_terbaca);
+        $this->assertEquals('ditolak', $dokumen->status);
         $this->assertNotNull($dokumen->ocr_diproses_at);
+
+        // Slot fotokopi_ktp harus dihapus dari state agar warga bisa upload ulang
+        $state = PercakapanState::where('no_wa', '628111')->first();
+        $this->assertArrayNotHasKey('fotokopi_ktp', $state->dokumen_diterima ?? []);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test 3: OCR gagal baca (ekstrak returns null) → status = tidak_terbaca,
-    //         TIDAK ada notifikasi WA (tidak mengganggu warga dengan pesan teknis)
+    // Test 3: OCR gagal baca (null) → status 'tidak_terbaca', link upload ulang dikirim
     // ─────────────────────────────────────────────────────────────────────────
-    public function test_ocr_gagal_baca_set_status_tidak_terbaca_tanpa_notifikasi()
+    public function test_ocr_gagal_baca_set_status_tidak_terbaca_dan_kirim_link_upload_ulang()
     {
         [$sesi, $dokumen] = $this->buatDokumenDanSesi('3517231234560001');
 
         $ocrMock = Mockery::mock(OcrService::class);
-        $ocrMock->shouldReceive('ekstrak')->once()->andReturn(null); // Tesseract error
+        $ocrMock->shouldReceive('ekstrak')->once()->andReturn(null);
         $ocrMock->shouldNotReceive('ekstrakNik');
         $this->app->instance(OcrService::class, $ocrMock);
 
-        // Notifier TIDAK boleh dipanggil sama sekali
         $notifierMock = Mockery::mock(WhatsAppNotifier::class);
-        $notifierMock->shouldNotReceive('kirim');
+        $notifierMock->shouldReceive('kirim')
+            ->once()
+            ->with('628111', Mockery::on(function ($pesan) {
+                return str_contains($pesan, 'ditolak')
+                    && str_contains($pesan, 'upload ulang');
+            }));
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
         VerifikasiOcrJob::dispatchSync($dokumen->id, $sesi->id, '628111');
@@ -151,7 +156,12 @@ class VerifikasiOcrJobTest extends TestCase
         $dokumen->refresh();
         $this->assertEquals('tidak_terbaca', $dokumen->status_ocr);
         $this->assertNull($dokumen->nik_terbaca);
+        $this->assertEquals('ditolak', $dokumen->status);
         $this->assertNotNull($dokumen->ocr_diproses_at);
+
+        // Slot fotokopi_ktp harus dihapus dari state agar warga bisa upload ulang
+        $state = PercakapanState::where('no_wa', '628111')->first();
+        $this->assertArrayNotHasKey('fotokopi_ktp', $state->dokumen_diterima ?? []);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -161,13 +171,11 @@ class VerifikasiOcrJobTest extends TestCase
     {
         [$sesi, $dokumen] = $this->buatDokumenDanSesi('3517231234560001', '628111', 'fotokopi_kk');
 
-        // OcrService tidak boleh dipanggil sama sekali untuk dokumen non-KTP
         $ocrMock = Mockery::mock(OcrService::class);
         $ocrMock->shouldNotReceive('ekstrak');
         $ocrMock->shouldNotReceive('ekstrakNik');
         $this->app->instance(OcrService::class, $ocrMock);
 
-        // Notifier juga tidak dipanggil untuk non-KTP
         $notifierMock = Mockery::mock(WhatsAppNotifier::class);
         $notifierMock->shouldNotReceive('kirim');
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
@@ -184,7 +192,8 @@ class VerifikasiOcrJobTest extends TestCase
     // ─────────────────────────────────────────────────────────────────────────
     public function test_job_gracefully_return_jika_dokumen_tidak_ditemukan()
     {
-        // Dispatch dengan ID yang tidak ada di DB
+        Storage::fake('local');
+
         $ocrMock = Mockery::mock(OcrService::class);
         $ocrMock->shouldNotReceive('ekstrak');
         $this->app->instance(OcrService::class, $ocrMock);
@@ -193,14 +202,12 @@ class VerifikasiOcrJobTest extends TestCase
         $notifierMock->shouldNotReceive('kirim');
         $this->app->instance(WhatsAppNotifier::class, $notifierMock);
 
-        // Job harus selesai tanpa exception — kita verifikasi tidak ada record baru
         VerifikasiOcrJob::dispatchSync(
             'id-yang-tidak-ada-sama-sekali',
             'sesi-id-dummy',
             '628111'
         );
 
-        // Tidak ada DokumenPermohonan yang tersimpan atau diubah
         $this->assertDatabaseCount('dokumen_permohonans', 0);
     }
 }

@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('warga', function (Blueprint $table) {
             $table->string('nik', 16)->primary();
-            $table->string('nama');
+            // nama nullable karena saat self-registration via OCR, kita mungkin belum tahu nama warga
+            $table->string('nama')->nullable();
             $table->string('no_hp_terdaftar')->nullable()->index();
             $table->text('alamat')->nullable();
             $table->timestamps();

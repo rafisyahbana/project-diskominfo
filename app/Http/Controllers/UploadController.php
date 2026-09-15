@@ -35,7 +35,7 @@ class UploadController extends Controller
         }
 
         $state = PercakapanState::where('no_wa', $no_wa)->first();
-        if (!$state || $state->langkah !== 'menunggu_dokumen') {
+        if (!$state || !in_array($state->langkah, ['menunggu_dokumen', 'menunggu_konfirmasi'])) {
             return response()->view('errors.custom', ['message' => 'Akses ditolak atau sesi tidak valid.'], 403);
         }
 
@@ -74,7 +74,7 @@ class UploadController extends Controller
         }
 
         $state = PercakapanState::where('no_wa', $no_wa)->first();
-        if (!$state || $state->langkah !== 'menunggu_dokumen') {
+        if (!$state || !in_array($state->langkah, ['menunggu_dokumen', 'menunggu_konfirmasi'])) {
             return response()->view('errors.custom', ['message' => 'Akses ditolak atau sesi tidak valid.'], 403);
         }
 
@@ -115,7 +115,19 @@ class UploadController extends Controller
                 $sesi_id,
                 $no_wa
             );
+
+            // Jika antrean berjalan sinkron (sync), cek apakah dokumen langsung ditolak oleh OCR
+            $dokumenRecord->refresh();
+            if ($dokumenRecord->status === 'ditolak') {
+                // Job sudah menghapus state dan mengirim pesan penolakan WhatsApp.
+                // Jangan kirim pesan sukses dari controller.
+                return view('upload.success', ['message' => 'Foto KTP telah diproses. Silakan periksa pesan WhatsApp Anda untuk hasil verifikasi.']);
+            }
         }
+
+        // Pastikan state selalu up-to-date (untuk menghindari stale memory jika queue sync memodifikasi state)
+        $state->refresh();
+        $dokumenDiterima = $state->dokumen_diterima ?? [];
 
         $katalog = $this->referensiService->syarat($state->jenis_surat_dipilih);
         $dokumenWajib = $katalog['dokumen_wajib'];
@@ -191,5 +203,73 @@ class UploadController extends Controller
     {
         return ReferensiService::LABEL_FIELD[$field]
             ?? ucwords(str_replace('_', ' ', $field));
+    }
+
+    public function showFormRegistrasi($no_wa)
+    {
+        $state = PercakapanState::where('no_wa', $no_wa)->first();
+        if (!$state || $state->langkah !== 'menunggu_upload_ktp_registrasi') {
+            return response()->view('errors.custom', ['message' => 'Akses ditolak atau sesi tidak valid.'], 403);
+        }
+
+        $jenis_dokumen = 'fotokopi_ktp';
+        $labelDokumen = 'Foto KTP Asli';
+
+        $postUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'upload.process_registrasi',
+            now()->addMinutes(60),
+            ['no_wa' => $no_wa]
+        );
+
+        return view('upload.form', compact('no_wa', 'jenis_dokumen', 'labelDokumen', 'postUrl'));
+    }
+
+    public function processRegistrasi(Request $request, $no_wa)
+    {
+        $state = PercakapanState::where('no_wa', $no_wa)->first();
+        if (!$state || $state->langkah !== 'menunggu_upload_ktp_registrasi') {
+            return response()->view('errors.custom', ['message' => 'Akses ditolak atau sesi tidak valid.'], 403);
+        }
+
+        $request->validate([
+            'file' => 'required|image|max:10240' // max 10MB
+        ]);
+
+        $file = $request->file('file');
+        $folder = 'dokumen/' . $no_wa;
+        $pathFile = Storage::disk('local')->putFile($folder, $file);
+
+        $dokumenRecord = DokumenPermohonan::create([
+            'no_wa'          => $no_wa,
+            'jenis_dokumen'  => 'fotokopi_ktp',
+            'path_file'      => $pathFile,
+            'id_permohonan'  => null,
+            'status'         => 'aktif',
+        ]);
+
+        $dokumenDiterima = $state->dokumen_diterima ?? [];
+        $dokumenDiterima['fotokopi_ktp'] = $dokumenRecord->id;
+        
+        $formSementara = $state->form_sementara ?? [];
+        $formSementara['percobaan_gagal_nik'] = 0; // Reset counter 
+
+        $state->update([
+            'dokumen_diterima' => $dokumenDiterima,
+            'langkah'          => 'menunggu_nik_registrasi',
+            'form_sementara'   => $formSementara
+        ]);
+
+        // Dispatch OCR khusus ekstrak NIK tanpa membandingkan
+        \App\Jobs\EkstrakNikDariKtpJob::dispatch(
+            $dokumenRecord->id,
+            $no_wa
+        );
+
+        $pesan = "✓ *Foto KTP* berhasil diterima.\n\n"
+               . "Sistem sedang memproses foto Anda. Untuk keamanan, silakan ketik *16 Digit NIK* Anda sekarang untuk pencocokan manual.";
+        
+        $this->notifier->kirim($no_wa, $pesan);
+
+        return view('upload.success', ['message' => 'Foto KTP berhasil diunggah! Silakan kembali ke WhatsApp Anda untuk instruksi selanjutnya.']);
     }
 }

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 use App\Models\Warga;
 use App\Models\PercakapanState;
@@ -13,6 +14,18 @@ use App\Models\SesiVerifikasi;
 class ConversationOrchestratorTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * Jalankan Storage::fake('local') di setiap awal test untuk mencegah
+     * test pollution antar method dalam class ini. Tanpa ini, test yang
+     * memanggil Storage::fake() di dalam method-nya bisa mencemari test
+     * berikutnya karena disk instance tidak di-restore ke real disk.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('local');
+    }
 
     public function test_warga_baru_mendapat_menu_utama()
     {
@@ -29,10 +42,10 @@ class ConversationOrchestratorTest extends TestCase
         $this->assertNull($state->sesi_id);
     }
 
-    public function test_warga_pilih_menu_1_diarahkan_ke_menunggu_nik()
+    public function test_warga_pilih_menu_1_diarahkan_ke_menunggu_upload_ktp_registrasi()
     {
         PercakapanState::create([
-            'no_wa' => '08111222333',
+            'no_wa'   => '08111222333',
             'langkah' => 'awal',
         ]);
 
@@ -44,7 +57,119 @@ class ConversationOrchestratorTest extends TestCase
         $response->assertStatus(200);
 
         $state = PercakapanState::where('no_wa', '08111222333')->first();
-        $this->assertEquals('menunggu_nik', $state->langkah);
+        // Alur baru: menu 1 sekarang mengarah ke upload KTP registrasi, bukan langsung minta NIK
+        $this->assertEquals('menunggu_upload_ktp_registrasi', $state->langkah);
+    }
+
+    /**
+     * Setelah di state menunggu_nik_registrasi, jika user ketik NIK yang cocok dengan OCR,
+     * state harus berpindah ke menunggu_otp.
+     */
+    public function test_nik_registrasi_cocok_dengan_ocr_pindah_ke_menunggu_otp()
+    {
+        Http::fake([
+            'api.fonnte.com/*' => Http::response(['status' => true], 200),
+        ]);
+
+        $dokumen = \App\Models\DokumenPermohonan::create([
+            'no_wa'         => '08111222333',
+            'jenis_dokumen' => 'fotokopi_ktp',
+            'path_file'     => 'dokumen/test.jpg',
+            'status'        => 'aktif',
+            'status_ocr'    => 'ok',
+            'nik_terbaca'   => '1234567890123456',
+        ]);
+
+        PercakapanState::create([
+            'no_wa'            => '08111222333',
+            'langkah'          => 'menunggu_nik_registrasi',
+            'dokumen_diterima' => ['fotokopi_ktp' => $dokumen->id],
+            'form_sementara'   => ['percobaan_gagal_nik' => 0],
+        ]);
+
+        $response = $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '1234567890123456',
+        ]);
+
+        $response->assertStatus(200);
+
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('menunggu_otp', $state->langkah);
+        $this->assertNotNull($state->sesi_id);
+    }
+
+    /**
+     * Jika NIK tidak cocok dengan OCR, counter percobaan bertambah dan state tetap menunggu_nik_registrasi.
+     */
+    public function test_nik_registrasi_tidak_cocok_counter_bertambah()
+    {
+        $dokumen = \App\Models\DokumenPermohonan::create([
+            'no_wa'         => '08111222333',
+            'jenis_dokumen' => 'fotokopi_ktp',
+            'path_file'     => 'dokumen/test.jpg',
+            'status'        => 'aktif',
+            'status_ocr'    => 'ok',
+            'nik_terbaca'   => '1234567890123456',
+        ]);
+
+        PercakapanState::create([
+            'no_wa'            => '08111222333',
+            'langkah'          => 'menunggu_nik_registrasi',
+            'dokumen_diterima' => ['fotokopi_ktp' => $dokumen->id],
+            'form_sementara'   => ['percobaan_gagal_nik' => 0],
+        ]);
+
+        // Ketik NIK yang salah
+        $response = $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '9999999999999999',
+        ]);
+
+        $response->assertStatus(200);
+
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('menunggu_nik_registrasi', $state->langkah); // Tetap di state yang sama
+        $this->assertEquals(1, $state->form_sementara['percobaan_gagal_nik']); // Counter naik
+    }
+
+    /**
+     * Setelah 3x gagal, state kembali ke awal dan dokumen KTP dihapus.
+     */
+    public function test_batas_percobaan_nik_habis_reset_ke_awal()
+    {
+        // Storage::fake sudah dipanggil di setUp() untuk semua test di class ini
+        $file = \Illuminate\Http\UploadedFile::fake()->image('ktp.jpg');
+        $path = $file->store('dokumen/08111222333', 'local');
+
+        $dokumen = \App\Models\DokumenPermohonan::create([
+            'no_wa'         => '08111222333',
+            'jenis_dokumen' => 'fotokopi_ktp',
+            'path_file'     => $path,
+            'status'        => 'aktif',
+            'status_ocr'    => 'ok',
+            'nik_terbaca'   => '1234567890123456',
+        ]);
+
+        PercakapanState::create([
+            'no_wa'            => '08111222333',
+            'langkah'          => 'menunggu_nik_registrasi',
+            'dokumen_diterima' => ['fotokopi_ktp' => $dokumen->id],
+            'form_sementara'   => ['percobaan_gagal_nik' => 2], // Sudah 2x gagal
+        ]);
+
+        // Percobaan ke-3 yang salah
+        $this->postJson('/api/dev/simulasi-chat', [
+            'no_wa' => '08111222333',
+            'pesan' => '9999999999999999',
+        ]);
+
+        $state = PercakapanState::where('no_wa', '08111222333')->first();
+        $this->assertEquals('awal', $state->langkah);
+        $this->assertNull($state->dokumen_diterima);
+
+        // Dokumen KTP harus sudah dihapus dari DB
+        $this->assertDatabaseMissing('dokumen_permohonans', ['id' => $dokumen->id]);
     }
 
     public function test_warga_pilih_menu_lain_mendapat_info_statis()
@@ -79,15 +204,9 @@ class ConversationOrchestratorTest extends TestCase
             'api.fonnte.com/*' => Http::response(['status' => true], 200),
         ]);
 
-        // Setup warga terdaftar
-        Warga::factory()->create([
-            'nik' => '1234567890123456',
-            'no_hp_terdaftar' => '08111222333'
-        ]);
-
-        // Setup state sebelumnya = menunggu_nik
+        // Alur baru: tidak perlu Warga ada di DB dulu — NIK akan di-upsert otomatis
         PercakapanState::create([
-            'no_wa' => '08111222333',
+            'no_wa'   => '08111222333',
             'langkah' => 'menunggu_nik',
         ]);
 
@@ -104,24 +223,31 @@ class ConversationOrchestratorTest extends TestCase
 
         // Pastikan SesiVerifikasi terbuat
         $this->assertDatabaseHas('sesi_verifikasi', [
-            'id' => $state->sesi_id,
-            'nik' => '1234567890123456',
-            'no_wa' => '08111222333',
+            'id'     => $state->sesi_id,
+            'nik'    => '1234567890123456',
+            'no_wa'  => '08111222333',
             'status' => 'pending'
+        ]);
+
+        // Pastikan Warga ter-upsert otomatis
+        $this->assertDatabaseHas('warga', [
+            'nik'            => '1234567890123456',
+            'no_hp_terdaftar' => '08111222333',
         ]);
     }
 
-    public function test_kirim_nik_tidak_valid_tetap_menunggu_nik()
+    public function test_kirim_nik_format_invalid_tetap_menunggu_nik()
     {
-        // Setup state sebelumnya = menunggu_nik
+        // Handler menunggu_nik mencari pola 16 digit dengan regex.
+        // Input di bawah tidak mengandung 16 digit berurutan, jadi tetap di state yang sama.
         PercakapanState::create([
-            'no_wa' => '08111222333',
+            'no_wa'   => '08111222333',
             'langkah' => 'menunggu_nik',
         ]);
 
         $response = $this->postJson('/api/dev/simulasi-chat', [
             'no_wa' => '08111222333',
-            'pesan' => 'NIK 9999999999999999',
+            'pesan' => 'NIK saya adalah 123', // kurang dari 16 digit
         ]);
 
         $response->assertStatus(200);

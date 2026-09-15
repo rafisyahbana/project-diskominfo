@@ -23,8 +23,9 @@ return new class extends Migration
             // Diisi setelah ajukan_surat berhasil dipanggil
             $table->uuid('id_permohonan')->nullable()->index();
 
-            // aktif = dokumen valid dalam alur; abandoned = warga batal sebelum konfirmasi
-            $table->enum('status', ['aktif', 'abandoned'])->default('aktif');
+            // aktif = dokumen valid dalam alur; abandoned = warga batal sebelum konfirmasi; ditolak = OCR gagal verifikasi
+            $table->enum('status', ['aktif', 'abandoned', 'ditolak'])->default('aktif');
+
 
             $table->timestamp('created_at')->useCurrent();
         });

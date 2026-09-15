@@ -17,7 +17,9 @@ return new class extends Migration
             $table->uuid('sesi_id')->nullable();
             $table->enum('langkah', [
                 'awal', 
-                'menunggu_nik', 
+                'menunggu_upload_ktp_registrasi', // [BARU] Menunggu upload KTP untuk registrasi awal
+                'menunggu_nik_registrasi',        // [BARU] Menunggu user ketik NIK untuk komparasi dengan OCR KTP
+                'menunggu_nik',                   // [LAMA] Masih dipertahankan untuk kompatibilitas jika diperlukan
                 'menunggu_otp', 
                 'menunggu_pilihan_surat', 
                 'mengisi_form', 

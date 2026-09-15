@@ -49,14 +49,16 @@ class ConversationOrchestrator
 
         // State Machine Router
         $respons = match ($state->langkah) {
-            'awal'                   => $this->handleAwal($state, $pesanMasuk),
-            'menunggu_nik'           => $this->handleMenungguNik($state, $pesanMasuk),
-            'menunggu_otp'           => $this->handleMenungguOtp($state, $pesanMasuk),
-            'menunggu_pilihan_surat' => $this->handleMenungguPilihanSurat($state, $pesanMasuk),
-            'mengisi_form'           => $this->handleMengisiForm($state, $pesanMasuk),
-            'menunggu_dokumen'       => $this->handleMenungguDokumen($state, $pesanMasuk, $file),
-            'menunggu_konfirmasi'    => $this->handleMenungguKonfirmasi($state, $pesanMasuk),
-            default                  => "Fitur untuk langkah '{$state->langkah}' belum tersedia.",
+            'awal'                           => $this->handleAwal($state, $pesanMasuk),
+            'menunggu_upload_ktp_registrasi' => $this->handleMenungguUploadKtpRegistrasi($state, $pesanMasuk),
+            'menunggu_nik_registrasi'        => $this->handleMenungguNikRegistrasi($state, $pesanMasuk),
+            'menunggu_nik'                   => $this->handleMenungguNik($state, $pesanMasuk), // Dipertahankan untuk kompatibilitas sementara
+            'menunggu_otp'                   => $this->handleMenungguOtp($state, $pesanMasuk),
+            'menunggu_pilihan_surat'         => $this->handleMenungguPilihanSurat($state, $pesanMasuk),
+            'mengisi_form'                   => $this->handleMengisiForm($state, $pesanMasuk),
+            'menunggu_dokumen'               => $this->handleMenungguDokumen($state, $pesanMasuk, $file),
+            'menunggu_konfirmasi'            => $this->handleMenungguKonfirmasi($state, $pesanMasuk),
+            default                          => "Fitur untuk langkah '{$state->langkah}' belum tersedia.",
         };
 
         // Simpan riwayat respons sistem
@@ -78,8 +80,18 @@ class ConversationOrchestrator
         $pesanLower = trim(strtolower($pesanMasuk));
 
         if ($pesanLower === '1') {
-            $state->update(['langkah' => 'menunggu_nik']);
-            return $this->llmResponder->susunRespons('minta_nik', $pesanMasuk);
+            $state->update(['langkah' => 'menunggu_upload_ktp_registrasi']);
+            
+            $linkUpload = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                'upload.ktp_registrasi',
+                now()->addMinutes(60),
+                ['no_wa' => $state->no_wa]
+            );
+            
+            return "Untuk memulai, kami membutuhkan foto KTP asli Anda untuk verifikasi identitas.\n\n"
+                 . "Silakan klik tautan berikut untuk mengunggah foto KTP Anda:\n"
+                 . "{$linkUpload}\n\n"
+                 . "(Tautan ini berlaku selama 60 menit).";
         } elseif ($pesanLower === '2') {
             return $this->llmResponder->susunRespons('menu_cek_status', $pesanMasuk);
         } elseif ($pesanLower === '3') {
@@ -88,6 +100,106 @@ class ConversationOrchestrator
 
         // Jika input tidak valid (misal: "Halo", "5"), kembali tampilkan menu utama tanpa mengubah state
         return $this->llmResponder->susunRespons('menu_awal', $pesanMasuk);
+    }
+
+    private function handleMenungguUploadKtpRegistrasi(PercakapanState $state, string $pesanMasuk): string
+    {
+        $linkUpload = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'upload.ktp_registrasi',
+            now()->addMinutes(60),
+            ['no_wa' => $state->no_wa]
+        );
+        return "Kami masih menunggu Anda mengunggah foto KTP.\n\nSilakan klik tautan berikut:\n{$linkUpload}";
+    }
+
+    private function handleMenungguNikRegistrasi(PercakapanState $state, string $pesanMasuk): string
+    {
+        // Cari dokumen KTP yang diunggah
+        $dokumenDiterima = $state->dokumen_diterima ?? [];
+        $ktpId = $dokumenDiterima['fotokopi_ktp'] ?? null;
+
+        if (!$ktpId) {
+            $state->update(['langkah' => 'menunggu_upload_ktp_registrasi']);
+            return "Data KTP Anda tidak ditemukan. Silakan ulangi proses upload KTP.";
+        }
+
+        $dokumenKtp = DokumenPermohonan::find($ktpId);
+
+        if (!$dokumenKtp) {
+            $state->update(['langkah' => 'menunggu_upload_ktp_registrasi']);
+            return "Data KTP Anda tidak ditemukan di sistem. Silakan ulangi proses upload KTP.";
+        }
+
+        if ($dokumenKtp->status_ocr === 'aktif' || $dokumenKtp->status_ocr === null) {
+            return "Sistem masih memproses foto KTP Anda. Mohon tunggu sebentar, lalu ketikkan ulang NIK Anda.";
+        }
+
+        if ($dokumenKtp->status_ocr === 'tidak_terbaca') {
+            // OCR tidak berhasil membaca teks KTP sama sekali
+            $linkUpload = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                'upload.ktp_registrasi',
+                now()->addMinutes(60),
+                ['no_wa' => $state->no_wa]
+            );
+            return "⚠️ Foto KTP tidak terbaca jelas oleh sistem (mungkin buram atau terlalu gelap).\n\n"
+                 . "Silakan unggah KTP baru yang lebih jelas di tautan berikut:\n{$linkUpload}";
+        }
+
+        // Cek input warga
+        if (preg_match('/(\d{16})/', $pesanMasuk, $matches)) {
+            $nikKetik = $matches[1];
+            $nikOcr = $dokumenKtp->nik_terbaca;
+            
+            if ($nikOcr && $nikKetik === $nikOcr) {
+                // COCOK! Lanjut ke VerifikasiService untuk generate OTP
+                $result = $this->verifikasiService->mulai($nikKetik, $state->no_wa);
+                
+                if ($result['code'] === 200) {
+                    $state->update([
+                        'langkah' => 'menunggu_otp',
+                        'sesi_id' => $result['data']['sesi_id'],
+                    ]);
+                    return $this->llmResponder->susunRespons('minta_otp', $pesanMasuk);
+                }
+                
+                return "Terjadi kesalahan saat memproses permintaan OTP Anda.";
+            } else {
+                // TIDAK COCOK
+                $formSementara = $state->form_sementara ?? [];
+                $gagal = ($formSementara['percobaan_gagal_nik'] ?? 0) + 1;
+                $formSementara['percobaan_gagal_nik'] = $gagal;
+                
+                if ($gagal >= 3) {
+                    // Batas percobaan habis
+                    Storage::disk('local')->delete($dokumenKtp->path_file);
+                    $dokumenKtp->delete();
+                    
+                    $state->update([
+                        'langkah' => 'awal',
+                        'form_sementara' => null,
+                        'dokumen_diterima' => null
+                    ]);
+                    
+                    return "Batas percobaan habis. Silakan mulai ulang permohonan dari awal dengan foto KTP yang lebih jelas.";
+                }
+                
+                $state->update(['form_sementara' => $formSementara]);
+                $sisa = 3 - $gagal;
+                
+                $linkUpload = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                    'upload.ktp_registrasi',
+                    now()->addMinutes(60),
+                    ['no_wa' => $state->no_wa]
+                );
+                
+                return "⚠️ NIK yang Anda ketik tidak cocok dengan hasil bacaan KTP.\n\n"
+                     . "Jika Anda salah ketik, silakan ketik ulang NIK Anda (Tersisa {$sisa} percobaan).\n\n"
+                     . "ATAU jika foto sebelumnya buram, silakan unggah KTP baru di tautan berikut:\n"
+                     . "{$linkUpload}";
+            }
+        }
+        
+        return "Format NIK tidak valid. Silakan ketik 16 digit NIK Anda (tanpa spasi/tanda hubung).";
     }
 
     private function handleMenungguNik(PercakapanState $state, string $pesanMasuk): string
@@ -268,7 +380,6 @@ class ConversationOrchestrator
             ));
             $state->update([
                 'langkah'           => 'menunggu_dokumen',
-                'dokumen_diterima'  => [],
             ]);
 
             return $this->llmResponder->susunRespons('form_lengkap_lanjut_dokumen', $pesanMasuk)
@@ -328,18 +439,27 @@ class ConversationOrchestrator
         $pesanLower = strtolower(trim($pesanMasuk));
 
         if ($pesanLower === 'batal') {
-            // Update semua dokumen menjadi abandoned
-            $dokumenIds = array_values($state->dokumen_diterima ?? []);
-            if (!empty($dokumenIds)) {
-                DokumenPermohonan::whereIn('id', $dokumenIds)->update(['status' => 'abandoned']);
+            // Update semua dokumen menjadi abandoned KECUALI fotokopi_ktp
+            $dokumenDiterima = $state->dokumen_diterima ?? [];
+            $dokumenIdsToAbandon = [];
+            $ktpId = $dokumenDiterima['fotokopi_ktp'] ?? null;
+
+            foreach ($dokumenDiterima as $jenis => $id) {
+                if ($jenis !== 'fotokopi_ktp') {
+                    $dokumenIdsToAbandon[] = $id;
+                }
             }
 
-            // Reset state (pertahankan sesi, kembali pilih surat)
+            if (!empty($dokumenIdsToAbandon)) {
+                DokumenPermohonan::whereIn('id', $dokumenIdsToAbandon)->update(['status' => 'abandoned']);
+            }
+
+            // Reset state (pertahankan sesi dan KTP, kembali pilih surat)
             $state->update([
                 'langkah'             => 'menunggu_pilihan_surat',
                 'jenis_surat_dipilih' => null,
                 'form_sementara'      => null,
-                'dokumen_diterima'    => null,
+                'dokumen_diterima'    => $ktpId ? ['fotokopi_ktp' => $ktpId] : null,
             ]);
 
             return $this->llmResponder->susunRespons('permohonan_batal', $pesanMasuk);

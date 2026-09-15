@@ -27,8 +27,16 @@ Route::get('/upload/dokumen/{no_wa}/{sesi_id}/{jenis_dokumen}', [\App\Http\Contr
     ->middleware('signed')
     ->name('upload.form');
 
+Route::get('/upload/registrasi/{no_wa}', [\App\Http\Controllers\UploadController::class, 'showFormRegistrasi'])
+    ->middleware('signed')
+    ->name('upload.ktp_registrasi');
+
 Route::post('/upload/dokumen/{no_wa}/{sesi_id}/{jenis_dokumen}', [\App\Http\Controllers\UploadController::class, 'process'])
     ->middleware('signed')
     ->name('upload.process');
+
+Route::post('/upload/registrasi/{no_wa}', [\App\Http\Controllers\UploadController::class, 'processRegistrasi'])
+    ->middleware('signed')
+    ->name('upload.process_registrasi');
 
 require __DIR__.'/auth.php';

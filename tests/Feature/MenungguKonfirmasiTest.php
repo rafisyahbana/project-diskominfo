@@ -114,7 +114,9 @@ class MenungguKonfirmasiTest extends TestCase
         $this->assertEquals($sesi->id, $state->sesi_id); // sesi tidak hilang
         $this->assertNull($state->jenis_surat_dipilih);
         $this->assertNull($state->form_sementara);
-        $this->assertNull($state->dokumen_diterima);
+        // fotokopi_ktp harus dipertahankan, karena diunggah saat awal registrasi
+        $this->assertArrayHasKey('fotokopi_ktp', $state->dokumen_diterima);
+        $this->assertArrayNotHasKey('fotokopi_kk', $state->dokumen_diterima);
 
         $permohonan = Permohonan::where('nik', '1234567890123456')->first();
         $this->assertNull($permohonan); // Tidak ada permohonan yang dibuat
@@ -122,7 +124,11 @@ class MenungguKonfirmasiTest extends TestCase
         $docs = DokumenPermohonan::where('no_wa', '08111222333')->get();
         foreach ($docs as $doc) {
             $this->assertNull($doc->id_permohonan);
-            $this->assertEquals('abandoned', $doc->status);
+            if ($doc->jenis_dokumen === 'fotokopi_ktp') {
+                $this->assertEquals('aktif', $doc->status); // KTP tidak di-abandon
+            } else {
+                $this->assertEquals('abandoned', $doc->status); // Dokumen lain di-abandon
+            }
         }
     }
 

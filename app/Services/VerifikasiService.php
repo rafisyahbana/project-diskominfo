@@ -15,37 +15,53 @@ class VerifikasiService
 
     /**
      * Memulai proses verifikasi NIK.
+     * Alur baru (self-registration): NIK + no_wa di-upsert ke tabel Warga.
+     * Jika no_wa sudah terdaftar dengan NIK BERBEDA, NIK lama di-overwrite dan dicatat di log audit.
+     *
      * Mengembalikan array: ['status' => string, 'code' => int, 'data' => array|null]
      */
     public function mulai(string $nik, string $no_wa): array
     {
-        $warga = Warga::find($nik);
+        // Cari apakah no_wa ini sudah pernah terdaftar sebelumnya dengan NIK berbeda
+        $wargaLama = Warga::where('no_hp_terdaftar', $no_wa)->first();
+        $nikLama = $wargaLama?->nik;
 
-        if (!$warga) {
-            $this->logAkses($no_wa, $nik, 'denied', ['error' => 'nik_tidak_ditemukan']);
-            return [
-                'status' => 'nik_tidak_ditemukan',
-                'code' => 404,
-            ];
-        }
+        if ($wargaLama && (string)$wargaLama->nik !== (string)$nik) {
+            // Overwrite NIK lama — catat detail audit secara eksplisit
+            Log::warning('[VerifikasiService] Overwrite NIK terdaftar untuk no_wa', [
+                'no_wa'   => $no_wa,
+                'nik_lama' => $nikLama,
+                'nik_baru' => $nik,
+            ]);
 
-        if (empty($warga->no_hp_terdaftar) || $warga->no_hp_terdaftar !== $no_wa) {
-            $this->logAkses($no_wa, $nik, 'denied', ['error' => 'no_wa_tidak_cocok']);
-            return [
-                'status' => 'no_wa_tidak_cocok',
-                'code' => 403,
-            ];
+            $this->logAkses($no_wa, $nik, 'nik_overwritten', [
+                'nik_lama'  => $nikLama,
+                'nik_baru'  => $nik,
+                'timestamp' => now()->toDateTimeString(),
+            ]);
+
+            // Update record yang sudah ada
+            $wargaLama->update([
+                'nik'            => $nik,
+                'no_hp_terdaftar' => $no_wa,
+            ]);
+        } else {
+            // Upsert: create kalau belum ada, update no_hp jika sudah ada dengan NIK yang sama
+            Warga::updateOrCreate(
+                ['nik' => $nik],
+                ['no_hp_terdaftar' => $no_wa]
+            );
         }
 
         $otp = sprintf('%06d', mt_rand(1, 999999));
         
         $sesi = SesiVerifikasi::create([
-            'no_wa' => $no_wa,
-            'nik' => $nik,
-            'otp_hash' => Hash::make($otp),
-            'status' => 'pending',
+            'no_wa'           => $no_wa,
+            'nik'             => $nik,
+            'otp_hash'        => Hash::make($otp),
+            'status'          => 'pending',
             'percobaan_gagal' => 0,
-            'expired_at' => now()->addMinutes(5),
+            'expired_at'      => now()->addMinutes(5),
         ]);
 
         // Kirim OTP via WhatsApp (Fonnte)
@@ -58,8 +74,8 @@ class VerifikasiService
 
         return [
             'status' => 'pending',
-            'code' => 200,
-            'data' => [
+            'code'   => 200,
+            'data'   => [
                 'sesi_id' => $sesi->id,
             ]
         ];
@@ -77,7 +93,7 @@ class VerifikasiService
             $this->logAkses('unknown', 'unknown', 'sesi_tidak_ditemukan', ['sesi_id' => $sesiId]);
             return [
                 'status' => 'sesi_tidak_ditemukan',
-                'code' => 404,
+                'code'   => 404,
             ];
         }
 
@@ -85,7 +101,7 @@ class VerifikasiService
             $this->logAkses($sesi->no_wa, $sesi->nik, $sesi->status, ['sesi_id' => $sesiId]);
             return [
                 'status' => $sesi->status,
-                'code' => 409,
+                'code'   => 409,
             ];
         }
 
@@ -94,7 +110,7 @@ class VerifikasiService
             $this->logAkses($sesi->no_wa, $sesi->nik, 'kedaluwarsa', ['sesi_id' => $sesiId]);
             return [
                 'status' => 'kedaluwarsa',
-                'code' => 410,
+                'code'   => 410,
             ];
         }
 
@@ -106,7 +122,7 @@ class VerifikasiService
                 $this->logAkses($sesi->no_wa, $sesi->nik, 'gagal_permanen', ['sesi_id' => $sesiId]);
                 return [
                     'status' => 'gagal_permanen',
-                    'code' => 429,
+                    'code'   => 429,
                 ];
             }
 
@@ -114,15 +130,15 @@ class VerifikasiService
             $this->logAkses($sesi->no_wa, $sesi->nik, 'salah', ['sesi_id' => $sesiId, 'sisa' => $sisa_percobaan]);
             return [
                 'status' => 'salah',
-                'code' => 401,
-                'data' => [
+                'code'   => 401,
+                'data'   => [
                     'sisa_percobaan' => $sisa_percobaan
                 ]
             ];
         }
 
         $sesi->update([
-            'status' => 'verified',
+            'status'         => 'verified',
             'berlaku_hingga' => now()->addMinutes(30)
         ]);
 
@@ -130,8 +146,8 @@ class VerifikasiService
         
         return [
             'status' => 'verified',
-            'code' => 200,
-            'data' => [
+            'code'   => 200,
+            'data'   => [
                 'berlaku_hingga' => $sesi->berlaku_hingga->toDateTimeString()
             ]
         ];
@@ -140,12 +156,12 @@ class VerifikasiService
     private function logAkses($no_wa, $nik, $hasil, $payload = null)
     {
         LogAksesAgent::create([
-            'no_wa' => $no_wa,
-            'nik' => $nik,
+            'no_wa'          => $no_wa,
+            'nik'            => $nik,
             'tool_dipanggil' => 'mulai_verifikasi',
-            'payload' => $payload,
-            'hasil' => $hasil,
-            'created_at' => now(),
+            'payload'        => $payload,
+            'hasil'          => $hasil,
+            'created_at'     => now(),
         ]);
     }
 }
