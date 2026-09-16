@@ -181,13 +181,33 @@ class DashboardController extends Controller
 
     public function index(Request $request)
     {
-        $status = $request->query('status', 'menunggu_verifikasi');
+        $status = $request->query('status', 'semua');
+        $validStatus = ['semua', 'menunggu_verifikasi', 'diproses', 'selesai', 'ditolak'];
+        $search = trim($request->query('search', ''));
 
-        $permohonan = Permohonan::where('status', $status)
-            ->orderBy('created_at', 'asc')
-            ->paginate(15);
+        if (!in_array($status, $validStatus)) {
+            $status = 'semua';
+        }
 
-        return view('dashboard.permohonan.index', compact('permohonan', 'status'));
+        $query = Permohonan::query()
+            ->leftJoin('warga', 'permohonan.nik', '=', 'warga.nik')
+            ->select('permohonan.*', 'warga.nama as nama_warga');
+
+        if ($status !== 'semua') {
+            $query->where('permohonan.status', $status);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('permohonan.nik', 'like', "%{$search}%")
+                  ->orWhere('permohonan.no_wa', 'like', "%{$search}%")
+                  ->orWhere('warga.nama', 'like', "%{$search}%");
+            });
+        }
+
+        $permohonan = $query->orderBy('permohonan.created_at', 'desc')->paginate(15)->withQueryString();
+
+        return view('dashboard.permohonan.index', compact('permohonan', 'status', 'search'));
     }
 
     public function show(string $id)

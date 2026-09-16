@@ -4,13 +4,13 @@
     {{-- Flash messages --}}
     @if (session('success'))
         <div class="alert alert-success">
-            ✓ {{ session('success') }}
+        {{ session('success') }}
         </div>
     @endif
 
     @if ($errors->has('status'))
         <div class="alert alert-error">
-            ✗ {{ $errors->first('status') }}
+            {{ $errors->first('status') }}
         </div>
     @endif
 
@@ -130,7 +130,7 @@
                             <form method="POST" action="{{ route('dashboard.permohonan.approve', $permohonan->id) }}" onsubmit="return confirm('Setujui permohonan ini?')">
                                 @csrf
                                 <button type="submit" id="btn-approve" class="btn btn-success" style="width: 100%; justify-content: center;">
-                                    ✓ Setujui Permohonan
+                                    Setujui Permohonan
                                 </button>
                             </form>
                         </div>
@@ -154,7 +154,7 @@
                                     @enderror
                                 </div>
                                 <button type="submit" id="btn-reject" class="btn btn-danger" style="width: 100%; justify-content: center;">
-                                    ✗ Tolak Permohonan
+                                    Tolak Permohonan
                                 </button>
                             </form>
                         </div>
@@ -176,7 +176,7 @@
                           onsubmit="return confirm('Terbitkan surat untuk permohonan ini? Tindakan ini tidak dapat dibatalkan.')">
                         @csrf
                         <button type="submit" id="btn-terbitkan" class="btn btn-primary" style="padding: 0.75rem 2rem;">
-                            📄 Terbitkan Surat Resmi
+                            Terbitkan Surat Resmi
                         </button>
                     </form>
                 </div>
@@ -187,7 +187,7 @@
         @if ($permohonan->status === 'selesai')
             <div class="dkm-card" style="border-color: #a7f3d0; background: #f0fdf4;">
                 <div class="dkm-card-header" style="border-bottom-color: #bbf7d0;">
-                    <h3 style="color: #065f46;">✅ Surat Telah Diterbitkan</h3>
+                    <h3 style="color: #065f46;">Surat Telah Diterbitkan</h3>
                 </div>
                 <div class="dkm-card-body">
                     <div style="display: flex; flex-direction: column; gap: 0.75rem;">

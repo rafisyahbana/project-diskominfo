@@ -425,6 +425,22 @@
                 box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
             }
 
+            .tab-filter-red {
+                background: #dc2626;
+                color: white;
+                border-color: #dc2626;
+            }
+            .tab-filter-red:not(.active) {
+                background: #fee2e2;
+                color: #991b1b;
+                border-color: #fca5a5;
+            }
+            .tab-filter-red.active {
+                background: #dc2626;
+                color: white;
+                box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+            }
+
             /* ── Buttons ── */
             .btn {
                 display: inline-flex;

@@ -20,12 +20,33 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+            text-decoration: none;
+            color: inherit;
+            cursor: pointer;
         }
 
         .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.09);
+            border-color: #bfdbfe;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .stat-card-clickable-hint {
+            font-size: 0.7rem;
+            color: #bfdbfe;
+            margin-top: 0.35rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            opacity: 0;
+            transition: opacity 0.18s ease;
+        }
+
+        .stat-card:hover .stat-card-clickable-hint {
+            opacity: 1;
         }
 
         .stat-info h4 {
@@ -156,7 +177,7 @@
         <div class="top-request-banner">
             <div>
                 <span class="top-request-tag">
-                    🏆 Permohonan Paling Banyak
+                    Permohonan Paling Banyak
                 </span>
                 <h3 style="font-size: 1.35rem; font-weight: 700; margin: 0.6rem 0 0.2rem; color: #ffffff;">
                     {{ $topJenisSurat['nama'] }}
@@ -178,70 +199,80 @@
 
     {{-- Summary Cards Grid --}}
     <div class="stats-grid">
-        <div class="stat-card">
+        {{-- Total Permohonan → ke semua permohonan --}}
+        <a href="{{ route('dashboard.permohonan.index', ['status' => 'semua']) }}" class="stat-card" title="Lihat semua permohonan">
             <div class="stat-info">
                 <h4>Total Permohonan</h4>
                 <div class="stat-value">{{ $totalPeriode }}</div>
                 <span style="font-size: 0.75rem; color: #9ca3af;">(Semua waktu: {{ $totalSemua }})</span>
+                <div class="stat-card-clickable-hint">Lihat daftar →</div>
             </div>
             <div class="stat-icon stat-icon-blue">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
             </div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        {{-- Menunggu Verifikasi --}}
+        <a href="{{ route('dashboard.permohonan.index', ['status' => 'menunggu_verifikasi']) }}" class="stat-card" title="Lihat permohonan menunggu verifikasi">
             <div class="stat-info">
                 <h4>Menunggu Verifikasi</h4>
                 <div class="stat-value" style="color: #2563eb;">{{ $menungguVerifikasi }}</div>
                 <span style="font-size: 0.75rem; color: #9ca3af;">Perlu ditinjau</span>
+                <div class="stat-card-clickable-hint">Lihat daftar →</div>
             </div>
             <div class="stat-icon stat-icon-blue">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        {{-- Sedang Diproses --}}
+        <a href="{{ route('dashboard.permohonan.index', ['status' => 'diproses']) }}" class="stat-card" title="Lihat permohonan sedang diproses">
             <div class="stat-info">
                 <h4>Sedang Diproses</h4>
                 <div class="stat-value" style="color: #d97706;">{{ $diproses }}</div>
                 <span style="font-size: 0.75rem; color: #9ca3af;">Siap terbitkan</span>
+                <div class="stat-card-clickable-hint">Lihat daftar →</div>
             </div>
             <div class="stat-icon stat-icon-yellow">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
             </div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        {{-- Selesai Diterbitkan --}}
+        <a href="{{ route('dashboard.permohonan.index', ['status' => 'selesai']) }}" class="stat-card" title="Lihat permohonan selesai diterbitkan">
             <div class="stat-info">
                 <h4>Selesai Diterbitkan</h4>
                 <div class="stat-value" style="color: #059669;">{{ $selesai }}</div>
                 <span style="font-size: 0.75rem; color: #9ca3af;">Surat terbit</span>
+                <div class="stat-card-clickable-hint">Lihat daftar →</div>
             </div>
             <div class="stat-icon stat-icon-green">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        {{-- Ditolak --}}
+        <a href="{{ route('dashboard.permohonan.index', ['status' => 'ditolak']) }}" class="stat-card" title="Lihat permohonan ditolak">
             <div class="stat-info">
                 <h4>Ditolak</h4>
                 <div class="stat-value" style="color: #dc2626;">{{ $ditolak }}</div>
                 <span style="font-size: 0.75rem; color: #9ca3af;">Berkas tidak valid</span>
+                <div class="stat-card-clickable-hint">Lihat daftar →</div>
             </div>
             <div class="stat-icon stat-icon-red">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
-        </div>
+        </a>
     </div>
 
     {{-- Charts Section --}}
@@ -249,7 +280,7 @@
         {{-- Trend Line / Bar Chart --}}
         <div class="dkm-card">
             <div class="dkm-card-header">
-                <h3>📈 Tren Permintaan Surat ({{ $periodeLabel }})</h3>
+                <h3>Tren Permintaan Surat ({{ $periodeLabel }})</h3>
                 <span style="font-size: 0.8125rem; color: #6b7280;">Berdasarkan Waktu Pengajuan</span>
             </div>
             <div class="dkm-card-body">
@@ -262,7 +293,7 @@
         {{-- Distribution Doughnut Chart --}}
         <div class="dkm-card">
             <div class="dkm-card-header">
-                <h3>📊 Distribusi Jenis Surat</h3>
+                <h3>Distribusi Jenis Surat</h3>
                 <span style="font-size: 0.8125rem; color: #6b7280;">Proporsi Pengajuan</span>
             </div>
             <div class="dkm-card-body">
@@ -277,7 +308,7 @@
     <div class="dkm-card">
         <div class="dkm-card-header">
             <div>
-                <h3>📋 Daftar Permintaan Berdasarkan 14 Jenis Surat</h3>
+                <h3>Daftar Permintaan Berdasarkan 14 Jenis Surat</h3>
                 <p style="margin: 0.25rem 0 0; font-size: 0.8125rem; color: #6b7280;">
                     Diurutkan dari pengajuan surat yang paling banyak diminta oleh warga
                 </p>
@@ -301,15 +332,7 @@
                     @foreach ($statJenisSurat as $idx => $item)
                         <tr>
                             <td style="text-align: center; font-weight: 600; color: {{ $idx < 3 && $item['total'] > 0 ? '#2563eb' : '#9ca3af' }};">
-                                @if ($idx === 0 && $item['total'] > 0)
-                                    🥇 1
-                                @elseif ($idx === 1 && $item['total'] > 0)
-                                    🥈 2
-                                @elseif ($idx === 2 && $item['total'] > 0)
-                                    🥉 3
-                                @else
-                                    {{ $idx + 1 }}
-                                @endif
+                                {{ $idx + 1 }}
                             </td>
                             <td>
                                 <div style="font-weight: 600; color: #1e3a5f;">
